@@ -1,0 +1,12 @@
+# Cloudflare Pages headers.
+# HTML, CSS, JS and config: always revalidate, so edits show right after a deploy (no stale numbers/text).
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Cache-Control: no-cache
+
+# Logos and images rarely change: cache for a week.
+/images/*
+  Cache-Control: public, max-age=604800
+/favicon.svg
+  Cache-Control: public, max-age=604800
