@@ -308,10 +308,12 @@ body.lock { overflow: hidden; }
   .picker { padding-top: 32px; }
 }
 @media (min-width: 1024px) {
-  .topnav { display: flex; }
   .agent { flex-basis: calc(25% - 11px); }
-  .subnav { display: none; }
   .pcard { flex-basis: calc(25% - 11px); }
+}
+@media (min-width: 1180px) {
+  .topnav { display: flex; }
+  .subnav { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

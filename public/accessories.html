@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>এক্সেসরিজ | আরিফ স্টুডিও</title>
+  <meta name="description" content="আরিফ স্টুডিওতে পাওয়া মোবাইল এক্সেসরিজ ও ইলেকট্রনিক্সের বর্তমান তালিকা, দাম ও স্টক দেখুন।">
+  <meta name="theme-color" content="#ff4f40">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Bangla:wght@700;800&family=Hind+Siliguri:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="css/accessories.css">
+  <script src="config.js" defer></script>
+  <script src="js/accessories.js" defer></script>
+</head>
+<body>
+  <header class="catalog-header">
+    <div class="catalog-wrap header-inner">
+      <a class="catalog-brand" href="index.html" aria-label="আরিফ স্টুডিও হোম">
+        <img src="images/logo/mark.svg" alt="" width="44" height="44">
+        <span><strong data-copy="brand">আরিফ স্টুডিও</strong><small data-copy="shop">এক্সেসরিজ শপ</small></span>
+      </a>
+      <div class="catalog-actions">
+        <div class="language" role="group" aria-label="ভাষা / Language">
+          <button type="button" data-lang="bn" aria-pressed="true">বাংলা</button>
+          <button type="button" data-lang="en" aria-pressed="false">EN</button>
+        </div>
+        <a class="home-link" href="index.html" data-copy="home">হোম</a>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="catalog-hero">
+      <div class="catalog-wrap">
+        <p class="eyebrow" data-copy="eyebrow">আরিফ স্টুডিও এন্ড টেলিকম</p>
+        <h1 data-copy="title">এক্সেসরিজ ও ইলেকট্রনিক্স</h1>
+        <p data-copy="intro">দোকানে থাকা পণ্যের বর্তমান দাম ও স্টক দেখুন। কেনার আগে ফোন করে নিশ্চিত হতে পারেন।</p>
+        <a class="call-button" data-phone href="#" data-copy="call">পণ্য সম্পর্কে কল করুন</a>
+      </div>
+    </section>
+
+    <section class="catalog-section" aria-labelledby="products-title">
+      <div class="catalog-wrap">
+        <div class="section-heading">
+          <div>
+            <h2 id="products-title" data-copy="products">পণ্যসমূহ</h2>
+            <p id="product-count" aria-live="polite"></p>
+          </div>
+          <button class="refresh-button" id="refresh-products" type="button" data-copy="refresh">আবার লোড করুন</button>
+        </div>
+
+        <div class="product-grid" id="product-grid" aria-live="polite" aria-busy="true">
+          <div class="product-skeleton" aria-hidden="true"></div>
+          <div class="product-skeleton" aria-hidden="true"></div>
+          <div class="product-skeleton" aria-hidden="true"></div>
+          <div class="product-skeleton" aria-hidden="true"></div>
+        </div>
+
+        <div class="catalog-state" id="catalog-state" hidden>
+          <div class="state-icon" aria-hidden="true">◎</div>
+          <h2 id="state-title"></h2>
+          <p id="state-message"></p>
+          <button class="retry-button" id="retry-products" type="button" data-copy="retry">আবার চেষ্টা করুন</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="catalog-footer">
+    <div class="catalog-wrap footer-inner">
+      <p><strong data-copy="brand">আরিফ স্টুডিও</strong><br><span data-address></span></p>
+      <p>© <span id="year"></span> <span data-copy="brand">আরিফ স্টুডিও</span></p>
+    </div>
+  </footer>
+</body>
+</html>
