@@ -34,3 +34,10 @@ test("every homepage translation key has an English entry", () => {
     assert.match(english, new RegExp(`\\b${key}\\s*:`), `missing English translation: ${key}`);
   }
 });
+
+test("homepage accessories preview shows four slots and opens the full catalog in a new tab", () => {
+  const html = readFileSync("public/index.html", "utf8");
+  assert.match(html, /id="home-product-grid"/);
+  assert.equal((html.match(/class="home-product-skeleton"/g) || []).length, 4);
+  assert.match(html, /href="accessories\.html" target="_blank" rel="noopener"[^>]*>[\s\S]*?data-i18n="homeProductsMore"/);
+});

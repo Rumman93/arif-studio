@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="css/style.css">
 <script src="config.js" defer></script>
 <script src="js/main.js" defer></script>
+<script src="js/home-products.js" defer></script>
 </head>
 <body>
 
@@ -243,6 +244,28 @@
         <p class="tip"><svg class="i"><use href="#i-bulb"/></svg><span data-i18n="tip">বিকাশ অ্যাপে আমাদের নম্বর <b>‘প্রিয় এজেন্ট’</b> হিসেবে যোগ করুন — কম চার্জে ক্যাশ আউট করতে পারবেন।</span></p>
         <p class="warn"><svg class="i"><use href="#i-shield"/></svg><span data-i18n="safety">পিন ও ওটিপি কাউকে বলবেন না — আমরাও কখনো জানতে চাই না। সন্দেহ হলে ফোন কেটে দোকানে এসে কথা বলুন।</span></p>
       </div>
+    </div>
+  </section>
+
+  <!-- ============ Accessories preview ============ -->
+  <section class="sec home-products" id="accessories" aria-labelledby="home-products-title">
+    <div class="wrap">
+      <div class="home-products-head">
+        <div>
+          <h2 class="h2" id="home-products-title" data-i18n="homeProductsTitle">এক্সেসরিজ</h2>
+          <p class="lead" data-i18n="homeProductsLead">দোকানের নতুন পণ্য, বর্তমান দাম ও স্টক এক নজরে দেখুন।</p>
+        </div>
+        <a class="more home-products-more" href="accessories.html" target="_blank" rel="noopener">
+          <span data-i18n="homeProductsMore">আরও দেখুন</span><svg class="i"><use href="#i-arrow"/></svg>
+        </a>
+      </div>
+      <div class="home-product-grid" id="home-product-grid" aria-live="polite" aria-busy="true">
+        <div class="home-product-skeleton" aria-hidden="true"></div>
+        <div class="home-product-skeleton" aria-hidden="true"></div>
+        <div class="home-product-skeleton" aria-hidden="true"></div>
+        <div class="home-product-skeleton" aria-hidden="true"></div>
+      </div>
+      <p class="home-product-state" id="home-product-state" hidden></p>
     </div>
   </section>
 

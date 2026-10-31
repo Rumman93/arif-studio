@@ -46,7 +46,7 @@ Delete the three `fonts.googleapis.com` / `fonts.gstatic.com` lines in the `<hea
 ## Run locally
 
 The homepage alone can still be previewed with `python3 -m http.server 8000 --directory public`. The accessories
-catalog and admin need the Worker, D1 and R2 bindings:
+catalog and admin need Cloudflare Pages Functions and the D1 binding:
 
 ```bash
 npm install
@@ -67,50 +67,50 @@ Open `/accessories.html` for the public catalog or `/admin/` to manage products.
 
 - Public product cards show the image, product name, price and stock status.
 - The admin can add, edit and delete products from a phone at `/admin/`.
-- Images are resized in the browser to 480 px and 960 px WebP variants before upload. Their
-  original proportions are preserved and product cards never stretch or crop them.
-- Product records live in Cloudflare D1. Product images live in a private R2 bucket and are served
-  through the Worker with long-lived immutable caching.
+- Images are resized in the browser to a maximum width or height of 720 px and converted to WebP
+  before upload. Their original proportions are preserved and product cards never stretch or crop them.
+- Product records and optimized images live in Cloudflare D1, so this project does not require R2.
+  Images are served through the Pages Function with long-lived immutable caching.
 - The admin password and session signing key are Cloudflare secrets and are never committed.
 
-## First Cloudflare deployment
+## First Cloudflare Pages deployment
 
-The product manager changes this project from a static upload to a Cloudflare Worker with static
-assets. The Worker, D1 database and R2 bucket all have free tiers. Run these commands once:
+The existing `arifstudio` production deployment remains untouched while you test this feature on a
+preview deployment. The D1 database has already been created and its ID is configured in `wrangler.jsonc`.
+Sign in and apply both migrations once:
 
 ```bash
 npx wrangler login
-npx wrangler d1 create arif-studio-products
-npx wrangler r2 bucket create arif-studio-product-images
-```
-
-Copy the D1 `database_id` returned by Cloudflare into `wrangler.jsonc`, replacing
-`REPLACE_WITH_D1_DATABASE_ID`. Then configure the two secrets. Use a different, random value for
-the session secret:
-
-```bash
-npx wrangler secret put ADMIN_PASSWORD
-npx wrangler secret put SESSION_SECRET
-```
-
-Apply the schema and deploy:
-
-```bash
 npx wrangler d1 migrations apply arif-studio-products --remote
-npm run deploy
 ```
 
-The migration uses text UUIDs, so there is no numeric ID sequence to reset. It uses
-`CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS` so initial setup is safe to repeat.
-For later database changes, add a new migration instead of editing an already-applied migration.
+Configure the two Pages secrets. Wrangler will securely prompt for each value; use your chosen admin
+password first and a different, long random value second:
+
+```bash
+npx wrangler pages secret put ADMIN_PASSWORD --project-name arifstudio --env preview
+npx wrangler pages secret put SESSION_SECRET --project-name arifstudio --env preview
+```
+
+Create a preview deployment on a separate branch URL (this does not replace production):
+
+```bash
+npm run deploy:preview
+```
+
+Wrangler prints the preview URL when deployment finishes. Only merge or deploy to the production
+branch after testing the homepage, accessories page, login and product management there.
+
+The migrations use text UUIDs, so there is no numeric ID sequence to reset. For later database
+changes, add a new migration instead of editing an already-applied migration.
 
 ## Security and performance notes
 
 - Admin sessions use signed, `HttpOnly`, `Secure`, `SameSite=Strict` cookies and expire after 12 hours.
 - Product writes require a valid session and a same-origin request. Failed logins are rate-limited.
-- Uploads are validated again by the Worker and are limited to optimized WebP files under 2 MB.
+- Uploads are validated again by the Pages Function and are limited to optimized WebP files up to 500 KB.
 - Public product data uses one D1 query and a short browser cache; product images are lazy-loaded.
-- `public/_headers` keeps static files fresh. The Worker also applies security headers,
+- `public/_headers` keeps static files fresh. The Pages Function also applies security headers,
   a content security policy and no-store caching to the admin page.
 
 ## Checks

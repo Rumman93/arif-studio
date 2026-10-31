@@ -16,7 +16,7 @@ class MockD1 {
       args: [],
       bind(...args) { this.args = args; return this; },
       async all() {
-        if (sql.includes("FROM products ORDER BY")) return { results: [...database.products] };
+        if (sql.includes("FROM products WHERE image_data")) return { results: database.products.filter(item => item.image_data) };
         throw new Error(`Unhandled all query: ${sql}`);
       },
       async first() {
@@ -45,17 +45,15 @@ class MockD1 {
           database.products.push({
             id: this.args[0], name: this.args[1], name_en: this.args[2], price: this.args[3],
             in_stock: this.args[4], image_small_key: this.args[5], image_large_key: this.args[6],
-            image_ratio: this.args[7], created_at: now, updated_at: now
+            image_ratio: this.args[7], image_data: this.args[8], image_etag: this.args[9], created_at: now, updated_at: now
           });
           return { success: true };
         }
         if (sql.startsWith("UPDATE products")) {
-          const item = database.products.find(product => product.id === this.args[7]);
-          Object.assign(item, {
-            name: this.args[0], name_en: this.args[1], price: this.args[2], in_stock: this.args[3],
-            image_small_key: this.args[4], image_large_key: this.args[5], image_ratio: this.args[6],
-            updated_at: Math.floor(Date.now() / 1000)
-          });
+          const withImage = sql.includes("image_data = ?");
+          const item = database.products.find(product => product.id === this.args[withImage ? 7 : 4]);
+          Object.assign(item, { name: this.args[0], name_en: this.args[1], price: this.args[2], in_stock: this.args[3], updated_at: Math.floor(Date.now() / 1000) });
+          if (withImage) Object.assign(item, { image_ratio: this.args[4], image_data: this.args[5], image_etag: this.args[6] });
           return { success: true };
         }
         if (sql.startsWith("DELETE FROM products")) {
@@ -72,23 +70,9 @@ class MockD1 {
   }
 }
 
-class MockR2 {
-  constructor() { this.objects = new Map(); }
-  async put(key, stream) {
-    const bytes = new Uint8Array(await new Response(stream).arrayBuffer());
-    this.objects.set(key, bytes);
-  }
-  async get(key) {
-    const bytes = this.objects.get(key);
-    return bytes ? { body: bytes, size: bytes.byteLength, httpEtag: '"test"' } : null;
-  }
-  async delete(key) { this.objects.delete(key); }
-}
-
 function environment() {
   return {
     DB: new MockD1(),
-    BUCKET: new MockR2(),
     ADMIN_PASSWORD: "correct horse battery staple",
     SESSION_SECRET: "a-long-random-test-secret-that-is-not-production",
     ASSETS: { fetch: () => new Response("asset") }
@@ -121,8 +105,7 @@ function productForm(overrides = {}) {
   form.set("inStock", overrides.inStock || "true");
   form.set("imageRatio", overrides.imageRatio || "1.25");
   if (!overrides.withoutImages) {
-    form.set("imageSmall", new File([new Uint8Array([1, 2, 3])], "small.webp", { type: "image/webp" }));
-    form.set("imageLarge", new File([new Uint8Array([1, 2, 3, 4])], "large.webp", { type: "image/webp" }));
+    form.set("image", new File([new Uint8Array([1, 2, 3, 4])], "image.webp", { type: "image/webp" }));
   }
   return form;
 }
@@ -131,14 +114,14 @@ test("public product listing uses one query and returns safe response fields", a
   const env = environment();
   env.DB.products.push({
     id: "a", name: "চার্জার", name_en: "Charger", price: 450, in_stock: 1,
-    image_small_key: "product-images/a-480.webp", image_large_key: "product-images/a-960.webp",
-    image_ratio: 1, updated_at: 1, created_at: 1
+    image_small_key: "d1/a.webp", image_large_key: "d1/a-large.webp",
+    image_ratio: 1, image_data: [1], image_etag: "etag", updated_at: 1, created_at: 1
   });
   const response = await call(env, "/api/products");
   assert.equal(response.status, 200);
   assert.equal(env.DB.queryCount, 1);
   const payload = await response.json();
-  assert.equal(payload.products[0].imageSmallUrl, "/product-images/a-480.webp");
+  assert.equal(payload.products[0].imageUrl, "/product-images/a.webp?v=d1-etag");
   assert.equal(payload.products[0].inStock, true);
   assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
 });
@@ -182,11 +165,10 @@ test("authenticated product create, update, image read and delete work end to en
   assert.equal(createdResponse.status, 201);
   const created = (await createdResponse.json()).product;
   assert.equal(created.name, "ফাস্ট চার্জার");
-  assert.equal(env.BUCKET.objects.size, 2);
-
-  const imageResponse = await call(env, created.imageSmallUrl);
+  const imageResponse = await call(env, created.imageUrl);
   assert.equal(imageResponse.status, 200);
   assert.equal(imageResponse.headers.get("Content-Type"), "image/webp");
+  assert.deepEqual(Array.from(new Uint8Array(await imageResponse.arrayBuffer())), [1, 2, 3, 4]);
 
   const update = productForm({ name: "টাইপ-সি চার্জার", price: "650", inStock: "false", withoutImages: true });
   const updatedResponse = await call(env, `/api/admin/products/${created.id}`, { method: "PUT", headers, body: update });
@@ -199,6 +181,8 @@ test("authenticated product create, update, image read and delete work end to en
   const deletedResponse = await call(env, `/api/admin/products/${created.id}`, { method: "DELETE", headers });
   assert.equal(deletedResponse.status, 200);
   assert.equal(env.DB.products.length, 0);
+  const deletedImageResponse = await call(env, created.imageUrl);
+  assert.equal(deletedImageResponse.status, 404);
 });
 
 test("session signatures cannot be tampered with", async () => {

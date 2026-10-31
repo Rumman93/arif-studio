@@ -1,6 +1,6 @@
 const SESSION_COOKIE = "arif_admin";
 const SESSION_SECONDS = 12 * 60 * 60;
-const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 500 * 1024;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
 
@@ -65,7 +65,7 @@ async function adminMutation(request, env, ctx, action) {
 async function listProducts(env) {
   requireBindings(env, ["DB"]);
   const result = await env.DB.prepare(
-    "SELECT id, name, name_en, price, in_stock, image_small_key, image_large_key, image_ratio, updated_at FROM products ORDER BY created_at DESC"
+    "SELECT id, name, name_en, price, in_stock, image_ratio, image_etag, updated_at FROM products WHERE image_data IS NOT NULL ORDER BY created_at DESC"
   ).all();
   return json({ products: (result.results || []).map(publicProduct) }, 200, {
     "Cache-Control": "public, max-age=15, stale-while-revalidate=60"
@@ -129,83 +129,58 @@ function logout() {
 }
 
 async function createProduct(request, env) {
-  requireBindings(env, ["DB", "BUCKET"]);
+  requireBindings(env, ["DB"]);
   const form = await readProductForm(request, true);
   if (form.error) return json({ error: form.error }, 400);
 
   const id = crypto.randomUUID();
-  const keys = imageKeys(id);
-  await putImages(env.BUCKET, keys, form.smallImage, form.largeImage);
-
-  try {
-    await env.DB.prepare(
-      "INSERT INTO products (id, name, name_en, price, in_stock, image_small_key, image_large_key, image_ratio) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-    ).bind(id, form.name, form.nameEn, form.price, form.inStock, keys.small, keys.large, form.imageRatio).run();
-  } catch (error) {
-    await Promise.all([env.BUCKET.delete(keys.small), env.BUCKET.delete(keys.large)]);
-    throw error;
-  }
+  const imageBytes = await form.image.arrayBuffer();
+  const imageEtag = await sha256Hex(imageBytes);
+  await env.DB.prepare(
+    "INSERT INTO products (id, name, name_en, price, in_stock, image_small_key, image_large_key, image_ratio, image_data, image_etag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(id, form.name, form.nameEn, form.price, form.inStock, `d1/${id}-image.webp`, `d1/${id}-image-large.webp`, form.imageRatio, imageBytes, imageEtag).run();
 
   const row = await env.DB.prepare(
-    "SELECT id, name, name_en, price, in_stock, image_small_key, image_large_key, image_ratio, updated_at FROM products WHERE id = ? LIMIT 1"
+    "SELECT id, name, name_en, price, in_stock, image_ratio, image_etag, updated_at FROM products WHERE id = ? LIMIT 1"
   ).bind(id).first();
   return json({ product: publicProduct(row) }, 201, { "Cache-Control": "no-store" });
 }
 
-async function updateProduct(request, env, ctx, id) {
-  requireBindings(env, ["DB", "BUCKET"]);
+async function updateProduct(request, env, _ctx, id) {
+  requireBindings(env, ["DB"]);
   const current = await env.DB.prepare(
-    "SELECT id, image_small_key, image_large_key, image_ratio FROM products WHERE id = ? LIMIT 1"
+    "SELECT id, image_ratio FROM products WHERE id = ? LIMIT 1"
   ).bind(id).first();
   if (!current) return json({ error: "Product not found." }, 404);
 
   const form = await readProductForm(request, false);
   if (form.error) return json({ error: form.error }, 400);
-  const hasNewImages = Boolean(form.smallImage && form.largeImage);
-  const keys = hasNewImages ? imageKeys(`${id}-${crypto.randomUUID()}`) : {
-    small: current.image_small_key,
-    large: current.image_large_key
-  };
-  if (hasNewImages) await putImages(env.BUCKET, keys, form.smallImage, form.largeImage);
-
-  try {
+  if (form.image) {
+    const imageBytes = await form.image.arrayBuffer();
+    const imageEtag = await sha256Hex(imageBytes);
     await env.DB.prepare(
-      "UPDATE products SET name = ?, name_en = ?, price = ?, in_stock = ?, image_small_key = ?, image_large_key = ?, image_ratio = ?, updated_at = unixepoch() WHERE id = ?"
-    ).bind(form.name, form.nameEn, form.price, form.inStock, keys.small, keys.large, form.imageRatio || current.image_ratio, id).run();
-  } catch (error) {
-    if (hasNewImages) await Promise.all([env.BUCKET.delete(keys.small), env.BUCKET.delete(keys.large)]);
-    throw error;
-  }
-
-  if (hasNewImages) {
-    const cleanup = Promise.all([
-      env.BUCKET.delete(current.image_small_key),
-      env.BUCKET.delete(current.image_large_key)
-    ]);
-    if (ctx && ctx.waitUntil) ctx.waitUntil(cleanup);
-    else await cleanup;
+      "UPDATE products SET name = ?, name_en = ?, price = ?, in_stock = ?, image_ratio = ?, image_data = ?, image_etag = ?, updated_at = unixepoch() WHERE id = ?"
+    ).bind(form.name, form.nameEn, form.price, form.inStock, form.imageRatio, imageBytes, imageEtag, id).run();
+  } else {
+    await env.DB.prepare(
+      "UPDATE products SET name = ?, name_en = ?, price = ?, in_stock = ?, updated_at = unixepoch() WHERE id = ?"
+    ).bind(form.name, form.nameEn, form.price, form.inStock, id).run();
   }
 
   const row = await env.DB.prepare(
-    "SELECT id, name, name_en, price, in_stock, image_small_key, image_large_key, image_ratio, updated_at FROM products WHERE id = ? LIMIT 1"
+    "SELECT id, name, name_en, price, in_stock, image_ratio, image_etag, updated_at FROM products WHERE id = ? LIMIT 1"
   ).bind(id).first();
   return json({ product: publicProduct(row) }, 200, { "Cache-Control": "no-store" });
 }
 
-async function deleteProduct(env, ctx, id) {
-  requireBindings(env, ["DB", "BUCKET"]);
+async function deleteProduct(env, _ctx, id) {
+  requireBindings(env, ["DB"]);
   const current = await env.DB.prepare(
-    "SELECT id, image_small_key, image_large_key FROM products WHERE id = ? LIMIT 1"
+    "SELECT id FROM products WHERE id = ? LIMIT 1"
   ).bind(id).first();
   if (!current) return json({ error: "Product not found." }, 404);
 
   await env.DB.prepare("DELETE FROM products WHERE id = ?").bind(id).run();
-  const cleanup = Promise.all([
-    env.BUCKET.delete(current.image_small_key),
-    env.BUCKET.delete(current.image_large_key)
-  ]);
-  if (ctx && ctx.waitUntil) ctx.waitUntil(cleanup);
-  else await cleanup;
   return json({ deleted: true }, 200, { "Cache-Control": "no-store" });
 }
 
@@ -225,19 +200,16 @@ async function readProductForm(request, requireImages) {
   const price = Number(priceText);
   const inStockText = String(data.get("inStock") || "");
   const imageRatio = Number(data.get("imageRatio"));
-  const smallImage = fileValue(data.get("imageSmall"));
-  const largeImage = fileValue(data.get("imageLarge"));
+  const image = fileValue(data.get("image"));
 
   if (!name) return { error: "Product name is required." };
   if (!/^\d{1,9}$/.test(priceText) || !Number.isSafeInteger(price) || price < 0) {
     return { error: "Price must be a whole number from 0 to 999,999,999." };
   }
   if (inStockText !== "true" && inStockText !== "false") return { error: "Choose a valid stock status." };
-  if (Boolean(smallImage) !== Boolean(largeImage)) return { error: "Both optimized image sizes are required." };
-  if (requireImages && (!smallImage || !largeImage)) return { error: "A product image is required." };
-  if (smallImage && !validImage(smallImage)) return { error: "The small image must be a WebP file under 2 MB." };
-  if (largeImage && !validImage(largeImage)) return { error: "The large image must be a WebP file under 2 MB." };
-  if ((smallImage || requireImages) && (!Number.isFinite(imageRatio) || imageRatio < 0.2 || imageRatio > 5)) {
+  if (requireImages && !image) return { error: "A product image is required." };
+  if (image && !validImage(image)) return { error: "The image must be a WebP file under 500 KB." };
+  if ((image || requireImages) && (!Number.isFinite(imageRatio) || imageRatio < 0.2 || imageRatio > 5)) {
     return { error: "Invalid image dimensions." };
   }
 
@@ -247,41 +219,36 @@ async function readProductForm(request, requireImages) {
     price,
     inStock: inStockText === "true" ? 1 : 0,
     imageRatio: Number.isFinite(imageRatio) ? imageRatio : null,
-    smallImage,
-    largeImage
+    image
   };
 }
 
-async function putImages(bucket, keys, smallImage, largeImage) {
-  const writes = await Promise.allSettled([
-    bucket.put(keys.small, smallImage.stream(), {
-      httpMetadata: { contentType: "image/webp", cacheControl: "public, max-age=31536000, immutable" }
-    }),
-    bucket.put(keys.large, largeImage.stream(), {
-      httpMetadata: { contentType: "image/webp", cacheControl: "public, max-age=31536000, immutable" }
-    })
-  ]);
-  const failed = writes.find(result => result.status === "rejected");
-  if (failed) {
-    await Promise.allSettled([bucket.delete(keys.small), bucket.delete(keys.large)]);
-    throw failed.reason;
-  }
-}
-
 async function getProductImage(env, key) {
-  requireBindings(env, ["BUCKET"]);
-  if (!/^product-images\/[a-z0-9-]+-(480|960)\.webp$/i.test(key)) {
+  requireBindings(env, ["DB"]);
+  const match = key.match(/^product-images\/([a-f0-9-]+)\.webp$/i);
+  if (!match) {
     return new Response("Not found", { status: 404 });
   }
-  const object = await env.BUCKET.get(key);
-  if (!object) return new Response("Not found", { status: 404 });
+  const image = await env.DB.prepare(
+    "SELECT image_data, image_etag FROM products WHERE id = ? AND image_data IS NOT NULL LIMIT 1"
+  ).bind(match[1]).first();
+  if (!image) return new Response("Not found", { status: 404 });
+  const imageBytes = blobBytes(image.image_data);
+  if (!imageBytes.byteLength) return new Response("Not found", { status: 404 });
   const headers = new Headers({
     "Content-Type": "image/webp",
     "Cache-Control": "public, max-age=31536000, immutable",
-    "Content-Length": String(object.size)
+    "Content-Length": String(imageBytes.byteLength)
   });
-  if (object.httpEtag) headers.set("ETag", object.httpEtag);
-  return new Response(object.body, { headers });
+  headers.set("ETag", `"${image.image_etag}"`);
+  return new Response(imageBytes, { headers });
+}
+
+function blobBytes(value) {
+  if (value instanceof ArrayBuffer) return new Uint8Array(value);
+  if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
+  if (Array.isArray(value)) return Uint8Array.from(value);
+  return new Uint8Array();
 }
 
 function publicProduct(row) {
@@ -291,17 +258,9 @@ function publicProduct(row) {
     nameEn: row.name_en || "",
     price: row.price,
     inStock: Boolean(row.in_stock),
-    imageSmallUrl: `/${row.image_small_key}`,
-    imageLargeUrl: `/${row.image_large_key}`,
+    imageUrl: `/product-images/${row.id}.webp?v=d1-${row.image_etag || row.updated_at}`,
     imageRatio: row.image_ratio,
     updatedAt: row.updated_at
-  };
-}
-
-function imageKeys(seed) {
-  return {
-    small: `product-images/${seed}-480.webp`,
-    large: `product-images/${seed}-960.webp`
   };
 }
 
@@ -315,6 +274,11 @@ function fileValue(value) {
 
 function validImage(file) {
   return file.type === "image/webp" && file.size <= MAX_IMAGE_BYTES;
+}
+
+async function sha256Hex(bytes) {
+  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+  return Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join("");
 }
 
 function isJson(request) {
@@ -414,9 +378,9 @@ function withSecurityHeaders(response, request) {
 
 export const _internals = {
   cleanText,
+  blobBytes,
   constantTimeEqual,
   createSession,
-  imageKeys,
   publicProduct,
   readProductForm,
   readSession,

@@ -4,3 +4,4 @@ node_modules/
 .env
 npm-debug.log*
 must_follow.md
+public/_worker.js

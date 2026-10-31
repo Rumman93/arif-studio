@@ -110,7 +110,7 @@
       var card = document.createElement("article");
       card.className = "admin-product";
       var image = document.createElement("img");
-      image.src = product.imageSmallUrl;
+      image.src = product.imageUrl;
       image.alt = product.name;
       image.width = 96;
       image.height = 96;
@@ -161,7 +161,7 @@
     document.getElementById("product-stock").checked = editing ? product.inStock : true;
     document.getElementById("product-image").required = !editing;
     document.getElementById("image-required").hidden = editing;
-    if (editing) setPreview(product.imageLargeUrl, false);
+    if (editing) setPreview(product.imageUrl, false);
     productDialog.showModal();
     document.getElementById("product-name").focus();
   }
@@ -221,9 +221,8 @@
       form.append("price", document.getElementById("product-price").value);
       form.append("inStock", String(document.getElementById("product-stock").checked));
       if (file) {
-        var optimized = await optimizeImages(file);
-        form.append("imageSmall", optimized.small, "product-480.webp");
-        form.append("imageLarge", optimized.large, "product-960.webp");
+        var optimized = await optimizeImage(file);
+        form.append("image", optimized.image, "product.webp");
         form.append("imageRatio", String(optimized.ratio));
         button.textContent = "আপলোড হচ্ছে…";
       }
@@ -244,7 +243,7 @@
     }
   });
 
-  async function optimizeImages(file) {
+  async function optimizeImage(file) {
     var bitmap;
     try {
       bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
@@ -256,14 +255,14 @@
       throw new Error("ছবির মাপ সঠিক নয়।");
     }
     var ratio = bitmap.width / bitmap.height;
-    var small = await resizeToWebP(bitmap, 480, .8);
-    var large = await resizeToWebP(bitmap, 960, .84);
+    var image = await resizeToWebP(bitmap, 720, .82);
     bitmap.close();
-    return { small: small, large: large, ratio: ratio };
+    if (image.size > 500 * 1024) throw new Error("ছবিটি অপটিমাইজ করার পরও বড় হয়েছে। কম বিস্তারিত ছবি চেষ্টা করুন।");
+    return { image: image, ratio: ratio };
   }
 
-  function resizeToWebP(bitmap, maxWidth, quality) {
-    var scale = Math.min(1, maxWidth / bitmap.width);
+  function resizeToWebP(bitmap, maxDimension, quality) {
+    var scale = Math.min(1, maxDimension / bitmap.width, maxDimension / bitmap.height);
     var width = Math.max(1, Math.round(bitmap.width * scale));
     var height = Math.max(1, Math.round(bitmap.height * scale));
     var canvas = document.createElement("canvas");

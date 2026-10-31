@@ -1,24 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "arif-studio",
-  "main": "worker.js",
-  "compatibility_date": "2026-10-31",
-  "assets": {
-    "directory": "./public",
-    "binding": "ASSETS"
-  },
+  "name": "arifstudio",
+  "compatibility_date": "2026-10-30",
+  "pages_build_output_dir": "./public",
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "arif-studio-products",
-      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "database_id": "dec188cf-330c-4f6d-a6a3-880243a5aaaf",
       "migrations_dir": "migrations"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "BUCKET",
-      "bucket_name": "arif-studio-product-images"
     }
   ]
 }

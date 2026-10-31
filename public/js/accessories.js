@@ -89,12 +89,10 @@
       var media = document.createElement("div");
       media.className = "product-media";
       var image = document.createElement("img");
-      image.src = product.imageSmallUrl;
-      image.srcset = product.imageSmallUrl + " 480w, " + product.imageLargeUrl + " 960w";
-      image.sizes = "(max-width: 599px) 50vw, (max-width: 959px) 33vw, 25vw";
+      image.src = product.imageUrl;
       image.alt = lang === "en" && product.nameEn ? product.nameEn : product.name;
-      image.width = 480;
-      image.height = 480;
+      image.width = 720;
+      image.height = 720;
       image.loading = "lazy";
       image.decoding = "async";
       media.appendChild(image);
