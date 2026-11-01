@@ -26,7 +26,7 @@ h1, h2, p { margin-top: 0; }
 label { display: block; margin: 15px 0 6px; font-weight: 600; }
 label span { color: var(--coral-dark); }
 label small { color: var(--body); font-weight: 400; }
-input[type="text"], input[type="password"], input[type="number"], input[type="file"] { width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid #cfd5cf; border-radius: 12px; color: var(--navy); background: #fff; }
+input[type="text"], input[type="password"], input[type="number"], input[type="file"], input[type="tel"], input[type="email"], input[type="url"], input[type="time"] { width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid #cfd5cf; border-radius: 12px; color: var(--navy); background: #fff; }
 input:focus { border-color: var(--navy); outline: 0; box-shadow: 0 0 0 3px rgba(9, 23, 35, .1); }
 .primary-button, .secondary-button { min-height: 46px; border: 0; border-radius: 999px; padding: 0 18px; cursor: pointer; font-weight: 600; }
 .primary-button { color: #fff; background: var(--navy); }
@@ -46,6 +46,10 @@ input:focus { border-color: var(--navy); outline: 0; box-shadow: 0 0 0 3px rgba(
 .header-actions a, .header-actions button { min-height: 38px; display: inline-flex; align-items: center; padding: 0 10px; border: 0; border-radius: 999px; color: var(--navy); background: var(--mist); cursor: pointer; font-size: .75rem; font-weight: 600; text-decoration: none; }
 .header-actions a { display: none; }
 .dashboard-main { width: min(100%, 980px); margin: 0 auto; padding: 26px 14px 50px; }
+.admin-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 26px; padding: 4px; border-radius: 999px; background: #e6e9e5; }
+.admin-tabs button { min-height: 42px; border: 0; border-radius: 999px; color: var(--body); background: transparent; cursor: pointer; font-weight: 600; }
+.admin-tabs button.active { color: #fff; background: var(--navy); box-shadow: 0 2px 8px rgba(9, 23, 35, .16); }
+.admin-panel { min-width: 0; }
 .dashboard-title { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
 .dashboard-title h1 { margin-bottom: 3px; font: 800 1.8rem/1.1 var(--display); }
 .dashboard-title p { margin-bottom: 0; color: var(--body); font-size: .85rem; }
@@ -63,6 +67,31 @@ input:focus { border-color: var(--navy); outline: 0; box-shadow: 0 0 0 3px rgba(
 .product-actions button { min-height: 34px; padding: 0 12px; border: 0; border-radius: 999px; cursor: pointer; font-size: .78rem; font-weight: 600; }
 .edit-product { color: var(--navy); background: var(--mist); }
 .delete-product { color: var(--danger); background: #ffe8e5; }
+
+.settings-heading h1 { margin-bottom: 5px; font: 800 1.8rem/1.1 var(--display); }
+.settings-heading p { margin-bottom: 0; color: var(--body); font-size: .88rem; }
+.settings-form { display: grid; gap: 14px; margin-top: 20px; }
+.settings-form fieldset { min-width: 0; margin: 0; padding: 17px 14px 19px; border: 1px solid var(--line); border-radius: 18px; background: #fff; }
+.settings-form legend { padding: 0 7px; font: 700 1.12rem var(--display); }
+.settings-grid { display: grid; grid-template-columns: 1fr; gap: 0 14px; }
+.settings-grid label { min-width: 0; }
+.settings-grid label input { display: block; margin-top: 6px; }
+.settings-grid .wide { grid-column: 1 / -1; }
+.profile-upload { display: grid; grid-template-columns: 82px minmax(0, 1fr); align-items: center; gap: 14px; margin-top: 18px; padding: 13px; border-radius: 16px; background: var(--mist); }
+.profile-upload-preview { width: 82px; height: 82px; display: grid; place-items: center; overflow: hidden; border: 2px solid #fff; border-radius: 50%; color: var(--body); background: #fff; font-size: .72rem; text-align: center; }
+.profile-upload-preview img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: center; }
+.profile-upload-control { min-width: 0; }
+.profile-upload-control label { margin-top: 0; }
+.profile-upload-status { min-height: 1.3em; margin: 5px 0 0; color: #167747; font-size: .76rem; }
+.profile-upload-status.error { color: var(--danger); }
+.days-label { display: block; margin-top: 16px; font-weight: 600; }
+.days-label small { color: var(--body); font-weight: 400; }
+.closed-days { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 9px; }
+.closed-days label { display: inline-flex; align-items: center; gap: 6px; min-height: 38px; margin: 0; padding: 6px 11px; border-radius: 999px; background: var(--mist); cursor: pointer; font-size: .84rem; }
+.closed-days input { width: 18px; height: 18px; accent-color: var(--coral); }
+.settings-save { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 18px; background: #fff; }
+.settings-save p { margin: 0; color: var(--body); font-size: .8rem; }
+.settings-save .primary-button { width: 100%; }
 
 dialog { width: min(calc(100% - 20px), 560px); max-height: calc(100vh - 20px); margin: auto; padding: 0; border: 0; border-radius: 24px; color: var(--navy); background: #fff; box-shadow: 0 24px 80px rgba(9, 23, 35, .24); }
 dialog::backdrop { background: rgba(9, 23, 35, .72); }
@@ -88,5 +117,10 @@ dialog::backdrop { background: rgba(9, 23, 35, .72); }
   .admin-product { grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; padding: 12px; }
   .admin-product img { width: 96px; height: 96px; }
   .product-actions { margin-top: 0; flex-direction: column; }
+  .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .time-grid { max-width: 520px; }
+  .settings-save { flex-direction: row; align-items: center; justify-content: space-between; }
+  .settings-save p { max-width: 520px; }
+  .settings-save .primary-button { width: auto; flex: none; }
   #product-form { padding: 26px; }
 }

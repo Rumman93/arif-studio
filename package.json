@@ -7,7 +7,7 @@
     "dev": "npm run prepare:pages && wrangler pages dev",
     "deploy:preview": "npm run prepare:pages && wrangler pages deploy public --project-name arifstudio --branch feature-accessories-catalog-admin",
     "test": "node --test",
-    "check": "node --check worker.js && node --check public/js/main.js && node --check public/js/en.js && node --check public/js/home-products.js && node --check public/js/accessories.js && node --check public/js/admin.js && node --test"
+    "check": "node --check worker.js && node --check public/js/main.js && node --check public/js/en.js && node --check public/js/site-settings.js && node --check public/js/home-products.js && node --check public/js/accessories.js && node --check public/js/admin.js && node --test"
   },
   "devDependencies": {
     "wrangler": "^4.45.0"

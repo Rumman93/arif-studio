@@ -159,13 +159,17 @@
   });
   document.getElementById("refresh-products").addEventListener("click", loadProducts);
   document.getElementById("retry-products").addEventListener("click", loadProducts);
-  document.querySelectorAll("[data-phone]").forEach(function (link) {
-    link.href = "tel:+" + phone(C.phone);
-  });
-  document.getElementById("year").textContent = new Date().getFullYear();
+  function start() {
+    document.querySelectorAll("[data-phone]").forEach(function (link) {
+      link.href = "tel:+" + phone(C.phone);
+    });
+    document.getElementById("year").textContent = new Date().getFullYear();
 
-  var saved = "bn";
-  try { saved = localStorage.getItem(LANG_KEY) || "bn"; } catch (error) { /* private mode */ }
-  setLanguage(saved);
-  loadProducts();
+    var saved = "bn";
+    try { saved = localStorage.getItem(LANG_KEY) || "bn"; } catch (error) { /* private mode */ }
+    setLanguage(saved);
+    loadProducts();
+  }
+
+  Promise.resolve(window.SITE_CONFIG_READY).then(start, start);
 })();

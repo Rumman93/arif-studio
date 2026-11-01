@@ -8,7 +8,14 @@ Theme: Monzo-style — white page, Hot Coral `#ff4f40` + navy `#091723` blocks, 
 variables at the top of `public/css/style.css`.
 
 ## Change phone / agent numbers, address, hours
-Edit **`public/config.js`** only, then deploy again.
+Sign in at `/admin/`, open **Website Settings**, edit the information and save. Settings cannot be
+deleted through the application. `public/config.js` remains the safe fallback and provides the
+initial values for a new database.
+
+You can manage the shop names, proprietor and technician contacts, main phone, WhatsApp, email,
+Facebook, agent numbers, map, bilingual address, opening hours, weekly closed days and the proprietor
+and technician profile photos.
+
 - Leave an agent number empty (`""`) to hide that brand everywhere.
 - Leave `facebook` empty to hide the Facebook button.
 
@@ -67,6 +74,10 @@ Open `/accessories.html` for the public catalog or `/admin/` to manage products.
 
 - Public product cards show the image, product name, price and stock status.
 - The admin can add, edit and delete products from a phone at `/admin/`.
+- The admin can update website contact and business information, but cannot delete the permanent
+  settings record.
+- Proprietor and technician photos are center-cropped to an exact 480×480 square and converted to
+  WebP in the browser. Uploading a replacement updates the same D1 row, so no old image blob remains.
 - Images are resized in the browser to a maximum width or height of 720 px and converted to WebP
   before upload. Their original proportions are preserved and product cards never stretch or crop them.
 - Product records and optimized images live in Cloudflare D1, so this project does not require R2.
@@ -77,7 +88,7 @@ Open `/accessories.html` for the public catalog or `/admin/` to manage products.
 
 The existing `arifstudio` production deployment remains untouched while you test this feature on a
 preview deployment. The D1 database has already been created and its ID is configured in `wrangler.jsonc`.
-Sign in and apply both migrations once:
+Sign in and apply all pending migrations:
 
 ```bash
 npx wrangler login
@@ -101,15 +112,21 @@ npm run deploy:preview
 Wrangler prints the preview URL when deployment finishes. Only merge or deploy to the production
 branch after testing the homepage, accessories page, login and product management there.
 
-The migrations use text UUIDs, so there is no numeric ID sequence to reset. For later database
-changes, add a new migration instead of editing an already-applied migration.
+The migrations use text UUIDs, so there is no numeric ID sequence to reset. The profile-image
+migration contains only `CREATE TABLE IF NOT EXISTS`, so running that SQL more than once has no
+effect on existing data. For later database changes, add a new migration instead of editing an
+already-applied migration.
 
 ## Security and performance notes
 
 - Admin sessions use signed, `HttpOnly`, `Secure`, `SameSite=Strict` cookies and expire after 12 hours.
 - Product writes require a valid session and a same-origin request. Failed logins are rate-limited.
 - Uploads are validated again by the Pages Function and are limited to optimized WebP files up to 500 KB.
+- Profile images use content-versioned URLs with long-lived browser caching; the public settings
+  endpoint still uses one D1 query on a cache miss.
 - Public product data uses one D1 query and a short browser cache; product images are lazy-loaded.
+- Public website settings use `config.js` immediately as a fallback. D1 overrides are cached for
+  five minutes in the browser and Cloudflare Cache API, reducing settings reads on the free tier.
 - `public/_headers` keeps static files fresh. The Pages Function also applies security headers,
   a content security policy and no-store caching to the admin page.
 

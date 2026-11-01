@@ -110,6 +110,20 @@
     each("[data-mail]", function (a) {
       if (C.email) { a.href = "mailto:" + C.email; a.textContent = C.email; } else { a.hidden = true; }
     });
+    each("[data-profile-image]", function (image) {
+      var role = image.getAttribute("data-profile-image");
+      var source = get("profileImages." + role);
+      var fallback = document.querySelector('[data-profile-fallback="' + role + '"]');
+      if (source) {
+        image.src = source;
+        image.hidden = false;
+        if (fallback) fallback.hidden = true;
+      } else {
+        image.hidden = true;
+        image.removeAttribute("src");
+        if (fallback) fallback.hidden = false;
+      }
+    });
 
     var H = C.hours || {};
     each("[data-hours]", function (el) { el.textContent = H.open ? fmtTime(H.open) + " – " + fmtTime(H.close) : ""; });
@@ -278,13 +292,17 @@
     if (e.target.closest("[data-close]")) closeDetail();
   });
 
-  var saved = null;
-  try { saved = localStorage.getItem(LANG_KEY); } catch (e) { /* private mode */ }
-  if (/[?&]lang=en\b/.test(location.search)) saved = "en";
-  if (saved === "en") setLang("en");
-  else render();
+  function start() {
+    var saved = null;
+    try { saved = localStorage.getItem(LANG_KEY); } catch (e) { /* private mode */ }
+    if (/[?&]lang=en\b/.test(location.search)) saved = "en";
+    if (saved === "en") setLang("en");
+    else render();
 
-  addSchema();
-  setupReveal();
-  setInterval(render, 60000); // keep the open/closed badge current
+    addSchema();
+    setupReveal();
+    setInterval(render, 60000); // keep the open/closed badge current
+  }
+
+  Promise.resolve(window.SITE_CONFIG_READY).then(start, start);
 })();

@@ -1,6 +1,7 @@
 const SESSION_COOKIE = "arif_admin";
 const SESSION_SECONDS = 12 * 60 * 60;
 const MAX_IMAGE_BYTES = 500 * 1024;
+const MAX_PROFILE_IMAGE_BYTES = 500 * 1024;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
 
@@ -22,6 +23,9 @@ async function route(request, env, ctx) {
   if (path === "/api/products" && request.method === "GET") {
     return listProducts(env);
   }
+  if (path === "/api/site-settings" && request.method === "GET") {
+    return getPublicSiteSettings(request, env, ctx);
+  }
   if (path === "/api/admin/login" && request.method === "POST") {
     if (!sameOrigin(request)) return json({ error: "Invalid request origin." }, 403);
     return login(request, env);
@@ -32,6 +36,16 @@ async function route(request, env, ctx) {
   }
   if (path === "/api/admin/session" && request.method === "GET") {
     return json({ authenticated: Boolean(await readSession(request, env)) }, 200, { "Cache-Control": "no-store" });
+  }
+  if (path === "/api/admin/settings" && request.method === "GET") {
+    return adminRead(request, env, getAdminSiteSettings);
+  }
+  if (path === "/api/admin/settings" && request.method === "PUT") {
+    return adminMutation(request, env, ctx, updateSiteSettings);
+  }
+  const adminProfileMatch = path.match(/^\/api\/admin\/profile-images\/(proprietor|technician)$/);
+  if (adminProfileMatch && request.method === "PUT") {
+    return adminMutation(request, env, ctx, (req, bindings, execution) => updateProfileImage(req, bindings, execution, adminProfileMatch[1]));
   }
   if (path === "/api/admin/products" && request.method === "POST") {
     return adminMutation(request, env, ctx, createProduct);
@@ -48,6 +62,10 @@ async function route(request, env, ctx) {
   if (path.startsWith("/product-images/") && request.method === "GET") {
     return getProductImage(env, decodeURIComponent(path.slice(1)));
   }
+  const profileImageMatch = path.match(/^\/profile-images\/(proprietor|technician)-([a-f0-9]{64})\.webp$/);
+  if (profileImageMatch && request.method === "GET") {
+    return getProfileImage(env, profileImageMatch[1], profileImageMatch[2]);
+  }
   if (path.startsWith("/api/")) {
     return json({ error: "Not found." }, 404);
   }
@@ -62,6 +80,11 @@ async function adminMutation(request, env, ctx, action) {
   return action(request, env, ctx);
 }
 
+async function adminRead(request, env, action) {
+  if (!await readSession(request, env)) return json({ error: "Please sign in again." }, 401);
+  return action(env);
+}
+
 async function listProducts(env) {
   requireBindings(env, ["DB"]);
   const result = await env.DB.prepare(
@@ -70,6 +93,229 @@ async function listProducts(env) {
   return json({ products: (result.results || []).map(publicProduct) }, 200, {
     "Cache-Control": "public, max-age=15, stale-while-revalidate=60"
   });
+}
+
+const SITE_SETTINGS_SELECT = `SELECT
+  shop_name_bn, shop_name_en,
+  proprietor_name_bn, proprietor_name_en, proprietor_phone,
+  servicing_name_bn, servicing_name_en, servicing_phone,
+  email, phone, whatsapp,
+  agent_bkash, agent_nagad, agent_rocket, agent_upay,
+  facebook, map_url, address_bn, address_en,
+  hours_open, hours_close, closed_days, updated_at,
+  (SELECT image_etag FROM site_profile_images WHERE role = 'proprietor') AS proprietor_image_etag,
+  (SELECT image_etag FROM site_profile_images WHERE role = 'technician') AS technician_image_etag
+  FROM site_settings WHERE id = 1 LIMIT 1`;
+
+async function getPublicSiteSettings(request, env, ctx) {
+  requireBindings(env, ["DB"]);
+  const cache = defaultCache();
+  const key = settingsCacheKey(request);
+  if (cache) {
+    try {
+      const cached = await cache.match(key);
+      if (cached) return cached;
+    } catch (error) {
+      console.warn("Settings cache read failed", error);
+    }
+  }
+
+  const row = await env.DB.prepare(SITE_SETTINGS_SELECT).first();
+  if (!row) return json({ error: "Site settings are not configured." }, 503, { "Cache-Control": "no-store" });
+  const response = publicSettingsResponse(siteSettings(row));
+  putSettingsCache(cache, key, response, ctx);
+  return response;
+}
+
+async function getAdminSiteSettings(env) {
+  requireBindings(env, ["DB"]);
+  const row = await env.DB.prepare(SITE_SETTINGS_SELECT).first();
+  if (!row) return json({ error: "Site settings are not configured." }, 503, { "Cache-Control": "no-store" });
+  return json({ settings: siteSettings(row) }, 200, { "Cache-Control": "no-store" });
+}
+
+async function updateSiteSettings(request, env, ctx) {
+  requireBindings(env, ["DB"]);
+  if (!isJson(request)) return json({ error: "Expected a JSON request." }, 415);
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid settings data." }, 400);
+  }
+  const checked = validateSiteSettings(body);
+  if (checked.error) return json({ error: checked.error }, 400, { "Cache-Control": "no-store" });
+  const value = checked.settings;
+
+  await env.DB.prepare(`UPDATE site_settings SET
+    shop_name_bn = ?, shop_name_en = ?,
+    proprietor_name_bn = ?, proprietor_name_en = ?, proprietor_phone = ?,
+    servicing_name_bn = ?, servicing_name_en = ?, servicing_phone = ?,
+    email = ?, phone = ?, whatsapp = ?,
+    agent_bkash = ?, agent_nagad = ?, agent_rocket = ?, agent_upay = ?,
+    facebook = ?, map_url = ?, address_bn = ?, address_en = ?,
+    hours_open = ?, hours_close = ?, closed_days = ?, updated_at = unixepoch()
+    WHERE id = 1`).bind(
+    value.shopName.bn, value.shopName.en,
+    value.proprietor.name.bn, value.proprietor.name.en, value.proprietor.phone,
+    value.servicing.name.bn, value.servicing.name.en, value.servicing.phone,
+    value.email, value.phone, value.whatsapp,
+    value.agents.bkash, value.agents.nagad, value.agents.rocket, value.agents.upay,
+    value.facebook, value.mapUrl, value.address.bn, value.address.en,
+    value.hours.open, value.hours.close, JSON.stringify(value.hours.closedDays)
+  ).run();
+
+  const row = await env.DB.prepare(SITE_SETTINGS_SELECT).first();
+  if (!row) return json({ error: "Site settings could not be loaded after saving." }, 500, { "Cache-Control": "no-store" });
+  const settings = siteSettings(row);
+  putSettingsCache(defaultCache(), settingsCacheKey(request), publicSettingsResponse(settings), ctx);
+  return json({ settings }, 200, { "Cache-Control": "no-store" });
+}
+
+function publicSettingsResponse(settings) {
+  return json({ settings }, 200, {
+    "Cache-Control": "public, max-age=300, stale-while-revalidate=60"
+  });
+}
+
+function defaultCache() {
+  return typeof caches !== "undefined" && caches.default ? caches.default : null;
+}
+
+function settingsCacheKey(request) {
+  return new Request(new URL("/api/site-settings", request.url).toString(), { method: "GET" });
+}
+
+function putSettingsCache(cache, key, response, ctx) {
+  if (!cache) return;
+  const operation = cache.put(key, response.clone()).catch(error => console.warn("Settings cache write failed", error));
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(operation);
+}
+
+function siteSettings(row) {
+  let closedDays = [];
+  try {
+    const parsed = JSON.parse(row.closed_days || "[]");
+    if (Array.isArray(parsed)) closedDays = parsed;
+  } catch { /* migration default remains in use */ }
+  return {
+    shopName: { bn: row.shop_name_bn, en: row.shop_name_en },
+    proprietor: {
+      name: { bn: row.proprietor_name_bn, en: row.proprietor_name_en },
+      phone: row.proprietor_phone
+    },
+    servicing: {
+      name: { bn: row.servicing_name_bn, en: row.servicing_name_en },
+      phone: row.servicing_phone
+    },
+    email: row.email,
+    phone: row.phone,
+    whatsapp: row.whatsapp,
+    agents: {
+      bkash: row.agent_bkash,
+      nagad: row.agent_nagad,
+      rocket: row.agent_rocket,
+      upay: row.agent_upay
+    },
+    facebook: row.facebook,
+    mapUrl: row.map_url,
+    address: { bn: row.address_bn, en: row.address_en },
+    hours: { open: row.hours_open, close: row.hours_close, closedDays },
+    profileImages: {
+      proprietor: profileImageUrl("proprietor", row.proprietor_image_etag),
+      technician: profileImageUrl("technician", row.technician_image_etag)
+    },
+    updatedAt: row.updated_at
+  };
+}
+
+function validateSiteSettings(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { error: "Invalid settings data." };
+  const required = [
+    [body.shopName?.bn, 120, "Bangla shop name"], [body.shopName?.en, 120, "English shop name"],
+    [body.proprietor?.name?.bn, 120, "Bangla proprietor name"], [body.proprietor?.name?.en, 120, "English proprietor name"],
+    [body.servicing?.name?.bn, 120, "Bangla technician name"], [body.servicing?.name?.en, 120, "English technician name"],
+    [body.address?.bn, 240, "Bangla address"], [body.address?.en, 240, "English address"]
+  ];
+  const values = [];
+  for (const [input, max, label] of required) {
+    const result = checkedText(input, max);
+    if (!result) return { error: `${label} is required and must be under ${max} characters.` };
+    values.push(result);
+  }
+
+  const proprietorPhone = checkedPhone(body.proprietor?.phone, false);
+  const servicingPhone = checkedPhone(body.servicing?.phone, false);
+  const phone = checkedPhone(body.phone, false);
+  const whatsapp = checkedPhone(body.whatsapp, false);
+  if (!proprietorPhone || !servicingPhone || !phone || !whatsapp) {
+    return { error: "Main, WhatsApp, proprietor and technician numbers must be valid 11-digit Bangladesh mobile numbers." };
+  }
+  const agents = {};
+  for (const name of ["bkash", "nagad", "rocket", "upay"]) {
+    const number = checkedPhone(body.agents?.[name], true, true);
+    if (number === null) return { error: `${name} agent number must be empty or a valid Bangladesh mobile number.` };
+    agents[name] = number;
+  }
+
+  const email = typeof body.email === "string" ? body.email.trim() : "";
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Enter a valid email address." };
+  const facebook = checkedUrl(body.facebook, true);
+  const mapUrl = checkedUrl(body.mapUrl, false);
+  if (facebook === null) return { error: "Facebook URL must be empty or a valid HTTPS link." };
+  if (!mapUrl) return { error: "Google Maps URL must be a valid HTTPS link." };
+
+  const open = checkedTime(body.hours?.open);
+  const close = checkedTime(body.hours?.close);
+  if (!open || !close || open === close) return { error: "Choose valid and different opening and closing times." };
+  const closedDays = body.hours?.closedDays;
+  if (!Array.isArray(closedDays) || closedDays.some(day => !Number.isInteger(day) || day < 0 || day > 6)) {
+    return { error: "Choose valid weekly closed days." };
+  }
+  const uniqueDays = [...new Set(closedDays)].sort((a, b) => a - b);
+
+  return { settings: {
+    shopName: { bn: values[0], en: values[1] },
+    proprietor: { name: { bn: values[2], en: values[3] }, phone: proprietorPhone },
+    servicing: { name: { bn: values[4], en: values[5] }, phone: servicingPhone },
+    email,
+    phone,
+    whatsapp,
+    agents,
+    facebook,
+    mapUrl,
+    address: { bn: values[6], en: values[7] },
+    hours: { open, close, closedDays: uniqueDays }
+  } };
+}
+
+function checkedText(value, maxLength) {
+  if (typeof value !== "string") return "";
+  const result = value.trim().replace(/\s+/g, " ");
+  return result && result.length <= maxLength ? result : "";
+}
+
+function checkedPhone(value, optional, allowTwelve = false) {
+  const result = typeof value === "string" ? value.replace(/\D/g, "") : "";
+  if (!result && optional) return "";
+  const pattern = allowTwelve ? /^01\d{9,10}$/ : /^01\d{9}$/;
+  return pattern.test(result) ? result : null;
+}
+
+function checkedUrl(value, optional) {
+  const result = typeof value === "string" ? value.trim() : "";
+  if (!result && optional) return "";
+  if (!result || result.length > 500) return null;
+  try {
+    const url = new URL(result);
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function checkedTime(value) {
+  return typeof value === "string" && /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value) ? value : null;
 }
 
 async function login(request, env) {
@@ -244,6 +490,55 @@ async function getProductImage(env, key) {
   return new Response(imageBytes, { headers });
 }
 
+async function updateProfileImage(request, env, ctx, role) {
+  requireBindings(env, ["DB"]);
+  const contentType = request.headers.get("Content-Type") || "";
+  if (!contentType.includes("multipart/form-data")) return json({ error: "Expected profile image form data." }, 415);
+
+  let data;
+  try {
+    data = await request.formData();
+  } catch {
+    return json({ error: "Invalid profile image form data." }, 400);
+  }
+  const image = fileValue(data.get("image"));
+  if (!image || image.type !== "image/webp" || image.size > MAX_PROFILE_IMAGE_BYTES) {
+    return json({ error: "The profile image must be a WebP file under 500 KB." }, 400, { "Cache-Control": "no-store" });
+  }
+
+  const imageBytes = await image.arrayBuffer();
+  const imageEtag = await sha256Hex(imageBytes);
+  await env.DB.prepare(
+    "INSERT INTO site_profile_images (role, image_data, image_etag, updated_at) VALUES (?, ?, ?, unixepoch()) ON CONFLICT(role) DO UPDATE SET image_data = excluded.image_data, image_etag = excluded.image_etag, updated_at = unixepoch()"
+  ).bind(role, imageBytes, imageEtag).run();
+
+  const row = await env.DB.prepare(SITE_SETTINGS_SELECT).first();
+  if (row) putSettingsCache(defaultCache(), settingsCacheKey(request), publicSettingsResponse(siteSettings(row)), ctx);
+  return json({ imageUrl: profileImageUrl(role, imageEtag) }, 200, { "Cache-Control": "no-store" });
+}
+
+async function getProfileImage(env, role, imageEtag) {
+  requireBindings(env, ["DB"]);
+  const image = await env.DB.prepare(
+    "SELECT image_data, image_etag FROM site_profile_images WHERE role = ? AND image_etag = ? LIMIT 1"
+  ).bind(role, imageEtag).first();
+  if (!image) return new Response("Not found", { status: 404 });
+  const imageBytes = blobBytes(image.image_data);
+  if (!imageBytes.byteLength) return new Response("Not found", { status: 404 });
+  return new Response(imageBytes, {
+    headers: {
+      "Content-Type": "image/webp",
+      "Cache-Control": "public, max-age=31536000, immutable",
+      "Content-Length": String(imageBytes.byteLength),
+      ETag: `"${image.image_etag}"`
+    }
+  });
+}
+
+function profileImageUrl(role, imageEtag) {
+  return imageEtag ? `/profile-images/${role}-${imageEtag}.webp` : "";
+}
+
 function blobBytes(value) {
   if (value instanceof ArrayBuffer) return new Uint8Array(value);
   if (ArrayBuffer.isView(value)) return new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
@@ -377,12 +672,14 @@ function withSecurityHeaders(response, request) {
 }
 
 export const _internals = {
-  cleanText,
   blobBytes,
+  cleanText,
   constantTimeEqual,
   createSession,
   publicProduct,
   readProductForm,
   readSession,
-  sameOrigin
+  sameOrigin,
+  siteSettings,
+  validateSiteSettings
 };

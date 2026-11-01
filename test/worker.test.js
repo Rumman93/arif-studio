@@ -5,8 +5,20 @@ import worker, { _internals } from "../worker.js";
 class MockD1 {
   constructor() {
     this.products = [];
+    this.profileImages = new Map();
     this.attempts = new Map();
     this.queryCount = 0;
+    this.settings = {
+      shop_name_bn: "আরিফ স্টুডিও এন্ড টেলিকম", shop_name_en: "Arif Studio & Telecom",
+      proprietor_name_bn: "আরিফুল ইসলাম", proprietor_name_en: "Ariful Islam", proprietor_phone: "01984993221",
+      servicing_name_bn: "আশরাফুল", servicing_name_en: "Ashraful", servicing_phone: "01970779989",
+      email: "arif.patwary35@gmail.com", phone: "01984993221", whatsapp: "01984993221",
+      agent_bkash: "01970100271", agent_nagad: "01750100271", agent_rocket: "01639099723", agent_upay: "01970100271",
+      facebook: "", map_url: "https://maps.app.goo.gl/D1qnpb4jLAiJMfFE9",
+      address_bn: "আয়েশা এম্পোরিয়াম, ফাজিলের ঘাট, দাগনভূঞা, ফেনী",
+      address_en: "Ayesha Emporium, Faziler Ghat, Daganbhuiyan, Feni",
+      hours_open: "09:00", hours_close: "22:00", closed_days: "[]", updated_at: 1
+    };
   }
 
   prepare(sql) {
@@ -22,6 +34,17 @@ class MockD1 {
       async first() {
         if (sql.includes("FROM admin_login_attempts")) return database.attempts.get(this.args[0]) || null;
         if (sql.includes("FROM products WHERE id")) return database.products.find(item => item.id === this.args[0]) || null;
+        if (sql.startsWith("SELECT image_data, image_etag FROM site_profile_images")) {
+          const image = database.profileImages.get(this.args[0]);
+          return image && image.image_etag === this.args[1] ? image : null;
+        }
+        if (sql.includes("FROM site_settings")) {
+          return {
+            ...database.settings,
+            proprietor_image_etag: database.profileImages.get("proprietor")?.image_etag || null,
+            technician_image_etag: database.profileImages.get("technician")?.image_etag || null
+          };
+        }
         throw new Error(`Unhandled first query: ${sql}`);
       },
       async run() {
@@ -58,6 +81,24 @@ class MockD1 {
         }
         if (sql.startsWith("DELETE FROM products")) {
           database.products = database.products.filter(product => product.id !== this.args[0]);
+          return { success: true };
+        }
+        if (sql.startsWith("UPDATE site_settings")) {
+          Object.assign(database.settings, {
+            shop_name_bn: this.args[0], shop_name_en: this.args[1],
+            proprietor_name_bn: this.args[2], proprietor_name_en: this.args[3], proprietor_phone: this.args[4],
+            servicing_name_bn: this.args[5], servicing_name_en: this.args[6], servicing_phone: this.args[7],
+            email: this.args[8], phone: this.args[9], whatsapp: this.args[10],
+            agent_bkash: this.args[11], agent_nagad: this.args[12], agent_rocket: this.args[13], agent_upay: this.args[14],
+            facebook: this.args[15], map_url: this.args[16], address_bn: this.args[17], address_en: this.args[18],
+            hours_open: this.args[19], hours_close: this.args[20], closed_days: this.args[21], updated_at: 2
+          });
+          return { success: true };
+        }
+        if (sql.startsWith("INSERT INTO site_profile_images")) {
+          database.profileImages.set(this.args[0], {
+            role: this.args[0], image_data: this.args[1], image_etag: this.args[2], updated_at: 2
+          });
           return { success: true };
         }
         throw new Error(`Unhandled run query: ${sql}`);
@@ -108,6 +149,25 @@ function productForm(overrides = {}) {
     form.set("image", new File([new Uint8Array([1, 2, 3, 4])], "image.webp", { type: "image/webp" }));
   }
   return form;
+}
+
+function settingsPayload() {
+  return {
+    shopName: { bn: "আরিফ স্টুডিও এন্ড টেলিকম", en: "Arif Studio & Telecom" },
+    proprietor: { name: { bn: "আরিফুল ইসলাম", en: "Ariful Islam" }, phone: "01984993221" },
+    servicing: { name: { bn: "আশরাফুল", en: "Ashraful" }, phone: "01970779989" },
+    email: "arif.patwary35@gmail.com",
+    phone: "01984993221",
+    whatsapp: "01984993221",
+    agents: { bkash: "01970100271", nagad: "01750100271", rocket: "01639099723", upay: "" },
+    facebook: "",
+    mapUrl: "https://maps.app.goo.gl/D1qnpb4jLAiJMfFE9",
+    address: {
+      bn: "আয়েশা এম্পোরিয়াম, ফাজিলের ঘাট বাজার, দাগনভূঞা, ফেনী",
+      en: "Ayesha Emporium, Fazilerghat Bazar, Daganbhuiyan, Feni"
+    },
+    hours: { open: "09:00", close: "22:00", closedDays: [5] }
+  };
 }
 
 test("public product listing uses one query and returns safe response fields", async () => {
@@ -190,4 +250,121 @@ test("session signatures cannot be tampered with", async () => {
   const token = await _internals.createSession(secret, Math.floor(Date.now() / 1000));
   const request = new Request("https://studio.test/api/admin/session", { headers: { Cookie: `arif_admin=${token}x` } });
   assert.equal(await _internals.readSession(request, { SESSION_SECRET: secret }), null);
+});
+
+test("public site settings use one D1 row read and return cacheable config-compatible data", async () => {
+  const env = environment();
+  const response = await call(env, "/api/site-settings");
+  assert.equal(response.status, 200);
+  assert.equal(env.DB.queryCount, 1);
+  assert.match(response.headers.get("Cache-Control"), /max-age=300/);
+  const payload = await response.json();
+  assert.equal(payload.settings.shopName.en, "Arif Studio & Telecom");
+  assert.equal(payload.settings.phone, "01984993221");
+  assert.deepEqual(payload.settings.hours.closedDays, []);
+});
+
+test("site settings are authenticated, update-only and do not affect products", async () => {
+  const env = environment();
+  env.DB.products.push({ id: "keep-product", image_data: [1] });
+  const unauthorized = await call(env, "/api/admin/settings");
+  assert.equal(unauthorized.status, 401);
+
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  const headers = { Origin: "https://studio.test", Cookie: cookie, "Content-Type": "application/json" };
+  const value = settingsPayload();
+  const updatedResponse = await call(env, "/api/admin/settings", {
+    method: "PUT", headers, body: JSON.stringify(value)
+  });
+  assert.equal(updatedResponse.status, 200);
+  const updated = (await updatedResponse.json()).settings;
+  assert.equal(updated.address.en, "Ayesha Emporium, Fazilerghat Bazar, Daganbhuiyan, Feni");
+  assert.deepEqual(updated.hours.closedDays, [5]);
+  assert.equal(env.DB.products.length, 1);
+
+  const deleteResponse = await call(env, "/api/admin/settings", { method: "DELETE", headers });
+  assert.equal(deleteResponse.status, 404);
+  assert.equal(env.DB.settings.shop_name_en, "Arif Studio & Telecom");
+});
+
+test("site settings reject invalid values and cross-origin updates", async () => {
+  const env = environment();
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  const invalid = settingsPayload();
+  invalid.phone = "123";
+  const invalidResponse = await call(env, "/api/admin/settings", {
+    method: "PUT",
+    headers: { Origin: "https://studio.test", Cookie: cookie, "Content-Type": "application/json" },
+    body: JSON.stringify(invalid)
+  });
+  assert.equal(invalidResponse.status, 400);
+
+  const crossOrigin = await call(env, "/api/admin/settings", {
+    method: "PUT",
+    headers: { Origin: "https://attacker.test", Cookie: cookie, "Content-Type": "application/json" },
+    body: JSON.stringify(settingsPayload())
+  });
+  assert.equal(crossOrigin.status, 403);
+});
+
+test("profile image upload replaces one role row, preserves products and serves an immutable versioned image", async () => {
+  const env = environment();
+  env.DB.products.push({ id: "keep-product", image_data: [1] });
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  const headers = { Origin: "https://studio.test", Cookie: cookie };
+
+  const firstForm = new FormData();
+  firstForm.set("image", new File([new Uint8Array([1, 2, 3])], "owner.webp", { type: "image/webp" }));
+  const firstResponse = await call(env, "/api/admin/profile-images/proprietor", { method: "PUT", headers, body: firstForm });
+  assert.equal(firstResponse.status, 200);
+  const firstUrl = (await firstResponse.json()).imageUrl;
+  assert.match(firstUrl, /^\/profile-images\/proprietor-[a-f0-9]{64}\.webp$/);
+
+  const imageResponse = await call(env, firstUrl);
+  assert.equal(imageResponse.status, 200);
+  assert.equal(imageResponse.headers.get("Content-Type"), "image/webp");
+  assert.match(imageResponse.headers.get("Cache-Control"), /immutable/);
+  assert.deepEqual(Array.from(new Uint8Array(await imageResponse.arrayBuffer())), [1, 2, 3]);
+
+  const secondForm = new FormData();
+  secondForm.set("image", new File([new Uint8Array([4, 5])], "owner.webp", { type: "image/webp" }));
+  const secondResponse = await call(env, "/api/admin/profile-images/proprietor", { method: "PUT", headers, body: secondForm });
+  const secondUrl = (await secondResponse.json()).imageUrl;
+  assert.equal(secondResponse.status, 200);
+  assert.notEqual(secondUrl, firstUrl);
+  assert.equal(env.DB.profileImages.size, 1);
+  assert.equal(env.DB.products.length, 1);
+  assert.equal((await call(env, firstUrl)).status, 404);
+
+  const settings = (await (await call(env, "/api/site-settings")).json()).settings;
+  assert.equal(settings.profileImages.proprietor, secondUrl);
+  assert.equal(settings.profileImages.technician, "");
+});
+
+test("profile image updates require authentication, same origin and optimized WebP input", async () => {
+  const env = environment();
+  const form = new FormData();
+  form.set("image", new File([new Uint8Array([1])], "owner.webp", { type: "image/webp" }));
+  const unauthorized = await call(env, "/api/admin/profile-images/proprietor", {
+    method: "PUT", headers: { Origin: "https://studio.test" }, body: form
+  });
+  assert.equal(unauthorized.status, 401);
+
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  const crossOrigin = await call(env, "/api/admin/profile-images/proprietor", {
+    method: "PUT", headers: { Origin: "https://attacker.test", Cookie: cookie }, body: form
+  });
+  assert.equal(crossOrigin.status, 403);
+
+  const invalid = new FormData();
+  invalid.set("image", new File([new Uint8Array([1])], "owner.png", { type: "image/png" }));
+  const invalidResponse = await call(env, "/api/admin/profile-images/proprietor", {
+    method: "PUT", headers: { Origin: "https://studio.test", Cookie: cookie }, body: invalid
+  });
+  assert.equal(invalidResponse.status, 400);
+  assert.equal(env.DB.profileImages.size, 0);
 });

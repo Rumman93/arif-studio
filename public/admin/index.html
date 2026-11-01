@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <title>পণ্য ম্যানেজার | আরিফ স্টুডিও</title>
+  <title>ওয়েবসাইট ম্যানেজার | আরিফ স্টুডিও</title>
   <meta name="theme-color" content="#091723">
   <link rel="icon" href="../favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,8 +17,8 @@
     <section class="login-card" id="login-view" hidden>
       <img src="../images/logo/mark.svg" width="64" height="64" alt="">
       <p class="eyebrow">আরিফ স্টুডিও</p>
-      <h1>পণ্য ম্যানেজার</h1>
-      <p class="intro">পণ্য যোগ, আপডেট বা মুছতে অ্যাডমিন পাসওয়ার্ড দিন।</p>
+      <h1>ওয়েবসাইট ম্যানেজার</h1>
+      <p class="intro">পণ্য ও ওয়েবসাইটের তথ্য পরিচালনা করতে অ্যাডমিন পাসওয়ার্ড দিন।</p>
       <form id="login-form">
         <label for="admin-password">পাসওয়ার্ড</label>
         <input id="admin-password" name="password" type="password" autocomplete="current-password" maxlength="256" required>
@@ -32,21 +32,127 @@
       <header class="dashboard-header">
         <div class="dashboard-brand">
           <img src="../images/logo/mark.svg" width="44" height="44" alt="">
-          <div><strong>পণ্য ম্যানেজার</strong><small>আরিফ স্টুডিও</small></div>
+          <div><strong>ওয়েবসাইট ম্যানেজার</strong><small>আরিফ স্টুডিও</small></div>
         </div>
         <div class="header-actions">
-          <a href="../accessories.html" target="_blank" rel="noopener">পেজ দেখুন</a>
+          <a href="../" target="_blank" rel="noopener">হোমপেজ দেখুন</a>
           <button id="logout-button" type="button">লগআউট</button>
         </div>
       </header>
 
       <div class="dashboard-main">
-        <div class="dashboard-title">
-          <div><h1>এক্সেসরিজ পণ্য</h1><p id="admin-count"></p></div>
-          <button class="primary-button add-button" id="add-product" type="button">＋ নতুন পণ্য</button>
-        </div>
-        <div class="admin-state" id="admin-state" aria-live="polite">পণ্য লোড হচ্ছে…</div>
-        <div class="admin-products" id="admin-products"></div>
+        <nav class="admin-tabs" aria-label="ম্যানেজার বিভাগ">
+          <button type="button" class="active" data-admin-tab="products" aria-controls="products-panel" aria-selected="true">পণ্য</button>
+          <button type="button" data-admin-tab="settings" aria-controls="settings-panel" aria-selected="false">ওয়েবসাইট তথ্য</button>
+        </nav>
+
+        <section class="admin-panel" id="products-panel">
+          <div class="dashboard-title">
+            <div><h1>এক্সেসরিজ পণ্য</h1><p id="admin-count"></p></div>
+            <button class="primary-button add-button" id="add-product" type="button">＋ নতুন পণ্য</button>
+          </div>
+          <div class="admin-state" id="admin-state" aria-live="polite">পণ্য লোড হচ্ছে…</div>
+          <div class="admin-products" id="admin-products"></div>
+        </section>
+
+        <section class="admin-panel" id="settings-panel" hidden>
+          <div class="settings-heading">
+            <h1>ওয়েবসাইট তথ্য</h1>
+            <p>এই তথ্য মুছে ফেলা যাবে না—শুধু সম্পাদনা ও সেভ করা যাবে।</p>
+          </div>
+          <div class="admin-state" id="settings-state" aria-live="polite">তথ্য লোড হচ্ছে…</div>
+          <form class="settings-form" id="settings-form" hidden>
+            <fieldset>
+              <legend>দোকানের পরিচয়</legend>
+              <div class="settings-grid">
+                <label for="setting-shop-bn">দোকানের নাম (বাংলা)<input id="setting-shop-bn" type="text" maxlength="120" required></label>
+                <label for="setting-shop-en">দোকানের নাম (English)<input id="setting-shop-en" type="text" maxlength="120" required></label>
+                <label for="setting-owner-bn">পরিচালকের নাম (বাংলা)<input id="setting-owner-bn" type="text" maxlength="120" required></label>
+                <label for="setting-owner-en">পরিচালকের নাম (English)<input id="setting-owner-en" type="text" maxlength="120" required></label>
+                <label for="setting-owner-phone">পরিচালকের ফোন<input id="setting-owner-phone" type="tel" inputmode="numeric" maxlength="11" pattern="01[0-9]{9}" required></label>
+                <div class="profile-upload wide" data-profile-uploader="proprietor">
+                  <div class="profile-upload-preview"><img id="setting-owner-image-preview" alt="পরিচালকের বর্তমান ছবি" hidden><span id="setting-owner-image-empty">ছবি নেই</span></div>
+                  <div class="profile-upload-control">
+                    <label for="setting-owner-image">পরিচালকের প্রোফাইল ছবি<input id="setting-owner-image" type="file" accept="image/jpeg,image/png,image/webp"></label>
+                    <p class="field-help">ছবির মাঝখান থেকে বর্গাকার করে 480px WebP বানানো হবে।</p>
+                    <p class="profile-upload-status" id="setting-owner-image-status" role="status" aria-live="polite"></p>
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>যোগাযোগ</legend>
+              <div class="settings-grid">
+                <label for="setting-phone">প্রধান ফোন<input id="setting-phone" type="tel" inputmode="numeric" maxlength="11" pattern="01[0-9]{9}" required></label>
+                <label for="setting-whatsapp">হোয়াটসঅ্যাপ<input id="setting-whatsapp" type="tel" inputmode="numeric" maxlength="11" pattern="01[0-9]{9}" required></label>
+                <label for="setting-email">ইমেইল<input id="setting-email" type="email" maxlength="254" required></label>
+                <label for="setting-facebook">ফেসবুক লিংক <small>(ঐচ্ছিক)</small><input id="setting-facebook" type="url" maxlength="500" placeholder="https://facebook.com/..."></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>এজেন্ট নম্বর</legend>
+              <p class="field-help">কোনো সেবা লুকাতে সেই নম্বরটি খালি রাখুন।</p>
+              <div class="settings-grid">
+                <label for="setting-bkash">বিকাশ<input id="setting-bkash" type="tel" inputmode="numeric" maxlength="12" pattern="01[0-9]{9,10}"></label>
+                <label for="setting-nagad">নগদ<input id="setting-nagad" type="tel" inputmode="numeric" maxlength="12" pattern="01[0-9]{9,10}"></label>
+                <label for="setting-rocket">রকেট<input id="setting-rocket" type="tel" inputmode="numeric" maxlength="12" pattern="01[0-9]{9,10}"></label>
+                <label for="setting-upay">উপায়<input id="setting-upay" type="tel" inputmode="numeric" maxlength="12" pattern="01[0-9]{9,10}"></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>মোবাইল সার্ভিসিং</legend>
+              <div class="settings-grid">
+                <label for="setting-tech-bn">টেকনিশিয়ানের নাম (বাংলা)<input id="setting-tech-bn" type="text" maxlength="120" required></label>
+                <label for="setting-tech-en">টেকনিশিয়ানের নাম (English)<input id="setting-tech-en" type="text" maxlength="120" required></label>
+                <label for="setting-tech-phone">টেকনিশিয়ানের ফোন<input id="setting-tech-phone" type="tel" inputmode="numeric" maxlength="11" pattern="01[0-9]{9}" required></label>
+                <div class="profile-upload wide" data-profile-uploader="technician">
+                  <div class="profile-upload-preview"><img id="setting-tech-image-preview" alt="টেকনিশিয়ানের বর্তমান ছবি" hidden><span id="setting-tech-image-empty">ছবি নেই</span></div>
+                  <div class="profile-upload-control">
+                    <label for="setting-tech-image">টেকনিশিয়ানের প্রোফাইল ছবি<input id="setting-tech-image" type="file" accept="image/jpeg,image/png,image/webp"></label>
+                    <p class="field-help">ছবির মাঝখান থেকে বর্গাকার করে 480px WebP বানানো হবে।</p>
+                    <p class="profile-upload-status" id="setting-tech-image-status" role="status" aria-live="polite"></p>
+                  </div>
+                </div>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>ঠিকানা ও ম্যাপ</legend>
+              <div class="settings-grid">
+                <label for="setting-address-bn">ঠিকানা (বাংলা)<input id="setting-address-bn" type="text" maxlength="240" required></label>
+                <label for="setting-address-en">ঠিকানা (English)<input id="setting-address-en" type="text" maxlength="240" required></label>
+                <label class="wide" for="setting-map">Google Maps লিংক<input id="setting-map" type="url" maxlength="500" required placeholder="https://maps.app.goo.gl/..."></label>
+              </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>খোলার সময়</legend>
+              <div class="settings-grid time-grid">
+                <label for="setting-open">খোলার সময়<input id="setting-open" type="time" required></label>
+                <label for="setting-close">বন্ধের সময়<input id="setting-close" type="time" required></label>
+              </div>
+              <span class="days-label">সাপ্তাহিক বন্ধের দিন <small>(না থাকলে কোনোটি নির্বাচন করবেন না)</small></span>
+              <div class="closed-days">
+                <label><input type="checkbox" name="closed-day" value="0"> রবি</label>
+                <label><input type="checkbox" name="closed-day" value="1"> সোম</label>
+                <label><input type="checkbox" name="closed-day" value="2"> মঙ্গল</label>
+                <label><input type="checkbox" name="closed-day" value="3"> বুধ</label>
+                <label><input type="checkbox" name="closed-day" value="4"> বৃহস্পতি</label>
+                <label><input type="checkbox" name="closed-day" value="5"> শুক্র</label>
+                <label><input type="checkbox" name="closed-day" value="6"> শনি</label>
+              </div>
+            </fieldset>
+
+            <div class="settings-save">
+              <p>সেভ করার পর নতুন তথ্য সর্বোচ্চ ৫ মিনিটের মধ্যে সব দর্শকের কাছে দেখা যাবে।</p>
+              <button class="primary-button" id="save-settings" type="submit">পরিবর্তন সেভ করুন</button>
+            </div>
+            <p class="form-error" id="settings-error" role="alert"></p>
+          </form>
+        </section>
       </div>
     </section>
   </main>

@@ -1,8 +1,8 @@
 /* =========================================================
    আরিফ স্টুডিও — সাইট সেটিংস (Site settings)
    ---------------------------------------------------------
-   শুধু এই ফাইলের মান বদলান, তারপর ফোল্ডারটি আবার আপলোড করুন।
-   Change only the values below, then upload the folder again.
+   এই মানগুলো নিরাপদ ডিফল্ট। অ্যাডমিন পেজে সেভ করা তথ্য আগে ব্যবহার হবে।
+   These values are safe defaults. Settings saved in the admin page take priority.
 
    • নম্বর লিখুন ইংরেজি অঙ্কে: "01712345678"
      Write numbers with English digits.

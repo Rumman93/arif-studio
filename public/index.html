@@ -18,6 +18,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anek+Bangla:wght@700;800&family=Hind+Siliguri:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="css/style.css">
 <script src="config.js" defer></script>
+<script src="js/site-settings.js" defer></script>
 <script src="js/main.js" defer></script>
 <script src="js/home-products.js" defer></script>
 </head>
@@ -255,9 +256,6 @@
           <h2 class="h2" id="home-products-title" data-i18n="homeProductsTitle">এক্সেসরিজ</h2>
           <p class="lead" data-i18n="homeProductsLead">দোকানের নতুন পণ্য, বর্তমান দাম ও স্টক এক নজরে দেখুন।</p>
         </div>
-        <a class="more home-products-more" href="accessories.html" target="_blank" rel="noopener">
-          <span data-i18n="homeProductsMore">আরও দেখুন</span><svg class="i"><use href="#i-arrow"/></svg>
-        </a>
       </div>
       <div class="home-product-grid" id="home-product-grid" aria-live="polite" aria-busy="true">
         <div class="home-product-skeleton" aria-hidden="true"></div>
@@ -266,6 +264,9 @@
         <div class="home-product-skeleton" aria-hidden="true"></div>
       </div>
       <p class="home-product-state" id="home-product-state" hidden></p>
+      <a class="more home-products-more" href="accessories.html" target="_blank" rel="noopener">
+        <span data-i18n="homeProductsMore">আরও দেখুন</span><svg class="i"><use href="#i-arrow"/></svg>
+      </a>
     </div>
   </section>
 
@@ -346,7 +347,10 @@
           <p class="status status-inline" id="status2" hidden><span class="dot"></span><span id="statusTxt2"></span></p>
         </div>
         <div class="pcard pcard-l">
-          <span class="wi"><svg class="i"><use href="#i-phone"/></svg></span>
+          <div class="contact-avatar">
+            <span class="wi" data-profile-fallback="proprietor"><svg class="i"><use href="#i-phone"/></svg></span>
+            <img data-profile-image="proprietor" width="144" height="144" loading="lazy" decoding="async" alt="পরিচালকের ছবি" hidden>
+          </div>
           <h3 data-i18n="callTitle">ফোন ও হোয়াটসঅ্যাপ</h3>
           <p class="who"><span data-i18n="propLbl">পরিচালনায়:</span> <b data-cfg="proprietor.name"></b></p>
           <p class="big"><a class="plain" data-tel="proprietor.phone"><span data-num="proprietor.phone"></span></a></p>
@@ -357,7 +361,10 @@
           </div>
         </div>
         <div class="pcard pcard-l">
-          <span class="wi"><svg class="il-sm"><use href="#il-tech"/></svg></span>
+          <div class="contact-avatar">
+            <span class="wi" data-profile-fallback="technician"><svg class="il-sm"><use href="#il-tech"/></svg></span>
+            <img data-profile-image="technician" width="144" height="144" loading="lazy" decoding="async" alt="টেকনিশিয়ানের ছবি" hidden>
+          </div>
           <h3 data-i18n="svcContact">মোবাইল সার্ভিসিং</h3>
           <p class="who"><span data-i18n="svTech">টেকনিশিয়ান:</span> <b data-cfg="servicing.name"></b></p>
           <p class="big"><a class="plain" data-tel="servicing.phone"><span data-num="servicing.phone"></span></a></p>
