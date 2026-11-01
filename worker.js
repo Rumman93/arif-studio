@@ -4,6 +4,10 @@ const MAX_IMAGE_BYTES = 500 * 1024;
 const MAX_PROFILE_IMAGE_BYTES = 500 * 1024;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
+const ANALYTICS_CACHE_SECONDS = 5 * 60;
+const CLOUDFLARE_ACCOUNT_TAG = "e2b1b46e43b33d3704fbbcea77ab9aba";
+const CLOUDFLARE_SITE_TAG = "aacbd0c036c14159b3f8be934ac4fa45";
+const ANALYTICS_HOST = "arifstudio.pages.dev";
 
 export default {
   async fetch(request, env, ctx) {
@@ -39,6 +43,10 @@ async function route(request, env, ctx) {
   }
   if (path === "/api/admin/settings" && request.method === "GET") {
     return adminRead(request, env, getAdminSiteSettings);
+  }
+  if (path === "/api/admin/analytics" && request.method === "GET") {
+    if (!await readSession(request, env)) return json({ error: "Please sign in again." }, 401);
+    return getAdminAnalytics(request, env, ctx);
   }
   if (path === "/api/admin/settings" && request.method === "PUT") {
     return adminMutation(request, env, ctx, updateSiteSettings);
@@ -83,6 +91,150 @@ async function adminMutation(request, env, ctx, action) {
 async function adminRead(request, env, action) {
   if (!await readSession(request, env)) return json({ error: "Please sign in again." }, 401);
   return action(env);
+}
+
+async function getAdminAnalytics(request, env, ctx) {
+  if (!env.CLOUDFLARE_ANALYTICS_TOKEN) {
+    return json({ error: "Visitor analytics are not configured." }, 503, { "Cache-Control": "no-store" });
+  }
+
+  const range = Number(new URL(request.url).searchParams.get("range") || 7);
+  if (range !== 7 && range !== 30) {
+    return json({ error: "Choose a 7 or 30 day range." }, 400, { "Cache-Control": "no-store" });
+  }
+
+  const cache = defaultCache();
+  const key = analyticsCacheKey(request, range);
+  if (cache) {
+    try {
+      const cached = await cache.match(key);
+      if (cached) return json(await cached.json(), 200, { "Cache-Control": "no-store" });
+    } catch (error) {
+      console.warn("Analytics cache read failed", error);
+    }
+  }
+
+  const window = analyticsWindow(range);
+  const query = `query VisitorStats($accountTag: string!, $siteTag: string!, $host: string!, $start: Time!, $end: Time!) {
+    viewer {
+      accounts(filter: { accountTag: $accountTag }) {
+        summary: rumPageloadEventsAdaptiveGroups(
+          limit: 1
+          filter: { siteTag: $siteTag, requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } }
+        daily: rumPageloadEventsAdaptiveGroups(
+          limit: 31
+          orderBy: [date_ASC]
+          filter: { siteTag: $siteTag, requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } dimensions { date } }
+        pages: rumPageloadEventsAdaptiveGroups(
+          limit: 10
+          orderBy: [count_DESC]
+          filter: { siteTag: $siteTag, requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } dimensions { requestPath } }
+      }
+    }
+  }`;
+
+  const fetcher = typeof env.ANALYTICS_FETCH === "function" ? env.ANALYTICS_FETCH : fetch;
+  let response;
+  try {
+    response = await fetcher("https://api.cloudflare.com/client/v4/graphql", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.CLOUDFLARE_ANALYTICS_TOKEN}`,
+        "Content-Type": "application/json",
+        Accept: "application/json"
+      },
+      body: JSON.stringify({
+        query,
+        variables: {
+          accountTag: CLOUDFLARE_ACCOUNT_TAG,
+          siteTag: CLOUDFLARE_SITE_TAG,
+          host: ANALYTICS_HOST,
+          start: window.start,
+          end: window.end
+        }
+      })
+    });
+  } catch (error) {
+    console.error("Cloudflare analytics request failed", error);
+    return json({ error: "Visitor analytics could not be loaded." }, 502, { "Cache-Control": "no-store" });
+  }
+
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    body = null;
+  }
+  const account = body?.data?.viewer?.accounts?.[0];
+  if (!response.ok || body?.errors?.length || !account) {
+    console.error("Cloudflare analytics returned an invalid response", response.status, body?.errors || []);
+    return json({ error: "Visitor analytics could not be loaded." }, 502, { "Cache-Control": "no-store" });
+  }
+
+  const payload = analyticsPayload(account, range, window);
+  putAnalyticsCache(cache, key, payload, ctx);
+  return json(payload, 200, { "Cache-Control": "no-store" });
+}
+
+function analyticsWindow(range, current = new Date()) {
+  const end = new Date(current);
+  const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+  start.setUTCDate(start.getUTCDate() - (range - 1));
+  return { start: start.toISOString(), end: end.toISOString(), startDate: start.toISOString().slice(0, 10) };
+}
+
+function analyticsPayload(account, range, window) {
+  const summary = account.summary?.[0] || {};
+  const pageViews = safeCount(summary.count);
+  const visits = safeCount(summary.sum?.visits);
+  const dailyValues = new Map((account.daily || []).map(item => [item.dimensions?.date, item]));
+  const start = new Date(`${window.startDate}T00:00:00.000Z`);
+  const daily = [];
+  for (let index = 0; index < range; index += 1) {
+    const date = new Date(start);
+    date.setUTCDate(start.getUTCDate() + index);
+    const key = date.toISOString().slice(0, 10);
+    const item = dailyValues.get(key) || {};
+    daily.push({ date: key, pageViews: safeCount(item.count), visits: safeCount(item.sum?.visits) });
+  }
+  const pages = (account.pages || []).map(item => ({
+    path: cleanAnalyticsPath(item.dimensions?.requestPath),
+    pageViews: safeCount(item.count),
+    visits: safeCount(item.sum?.visits)
+  })).filter(item => item.path).slice(0, 10);
+  return {
+    range,
+    generatedAt: window.end,
+    pageViews,
+    visits,
+    pagesPerVisit: visits ? Number((pageViews / visits).toFixed(1)) : 0,
+    daily,
+    pages
+  };
+}
+
+function safeCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) && count > 0 ? Math.round(count) : 0;
+}
+
+function cleanAnalyticsPath(value) {
+  if (typeof value !== "string" || !value.startsWith("/")) return "";
+  return value.slice(0, 240);
+}
+
+function analyticsCacheKey(request, range) {
+  return new Request(new URL(`/api/admin/analytics?range=${range}`, request.url).toString(), { method: "GET" });
+}
+
+function putAnalyticsCache(cache, key, payload, ctx) {
+  if (!cache) return;
+  const cached = json(payload, 200, { "Cache-Control": `public, max-age=${ANALYTICS_CACHE_SECONDS}` });
+  const operation = cache.put(key, cached).catch(error => console.warn("Analytics cache write failed", error));
+  if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(operation);
 }
 
 async function listProducts(env) {
@@ -663,7 +815,7 @@ function withSecurityHeaders(response, request) {
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
   headers.set("X-Frame-Options", "DENY");
   headers.set("Permissions-Policy", "camera=(self), microphone=(), geolocation=()");
-  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+  headers.set("Content-Security-Policy", "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com/beacon.min.js; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://cloudflareinsights.com; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
   if (new URL(request.url).pathname.startsWith("/admin")) {
     headers.set("X-Robots-Tag", "noindex, nofollow");
     headers.set("Cache-Control", "no-store");
@@ -672,6 +824,8 @@ function withSecurityHeaders(response, request) {
 }
 
 export const _internals = {
+  analyticsPayload,
+  analyticsWindow,
   blobBytes,
   cleanText,
   constantTimeEqual,

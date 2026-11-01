@@ -368,3 +368,97 @@ test("profile image updates require authentication, same origin and optimized We
   assert.equal(invalidResponse.status, 400);
   assert.equal(env.DB.profileImages.size, 0);
 });
+
+test("visitor analytics require authentication and accept only supported ranges", async () => {
+  const env = environment();
+  env.CLOUDFLARE_ANALYTICS_TOKEN = "test-token-that-must-not-leak";
+  let requests = 0;
+  env.ANALYTICS_FETCH = async () => {
+    requests += 1;
+    return new Response("unexpected");
+  };
+
+  const unauthorized = await call(env, "/api/admin/analytics?range=7");
+  assert.equal(unauthorized.status, 401);
+  assert.equal(requests, 0);
+
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  const invalid = await call(env, "/api/admin/analytics?range=365", { headers: { Cookie: cookie } });
+  assert.equal(invalid.status, 400);
+  assert.equal(requests, 0);
+});
+
+test("visitor analytics use one Cloudflare request, no D1 query and return only safe aggregated data", async () => {
+  const env = environment();
+  env.CLOUDFLARE_ANALYTICS_TOKEN = "test-token-that-must-not-leak";
+  let requestDetails;
+  env.ANALYTICS_FETCH = async (url, options) => {
+    requestDetails = { url, options };
+    return Response.json({
+      data: { viewer: { accounts: [{
+        summary: [{ count: 12, sum: { visits: 7 } }],
+        daily: [
+          { count: 4, sum: { visits: 3 }, dimensions: { date: "2026-10-30" } },
+          { count: 8, sum: { visits: 4 }, dimensions: { date: "2026-11-02" } }
+        ],
+        pages: [
+          { count: 9, sum: { visits: 5 }, dimensions: { requestPath: "/" } },
+          { count: 3, sum: { visits: 2 }, dimensions: { requestPath: "/accessories" } }
+        ]
+      }] } }
+    });
+  };
+
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  const queryCount = env.DB.queryCount;
+  const response = await call(env, "/api/admin/analytics?range=7", { headers: { Cookie: cookie } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(env.DB.queryCount, queryCount);
+  assert.equal(requestDetails.url, "https://api.cloudflare.com/client/v4/graphql");
+  assert.equal(requestDetails.options.headers.Authorization, "Bearer test-token-that-must-not-leak");
+  const query = JSON.parse(requestDetails.options.body);
+  assert.equal(query.variables.accountTag, "e2b1b46e43b33d3704fbbcea77ab9aba");
+  assert.equal(query.variables.siteTag, "aacbd0c036c14159b3f8be934ac4fa45");
+  assert.equal(query.variables.host, "arifstudio.pages.dev");
+
+  const payload = await response.json();
+  assert.equal(payload.pageViews, 12);
+  assert.equal(payload.visits, 7);
+  assert.equal(payload.pagesPerVisit, 1.7);
+  assert.equal(payload.daily.length, 7);
+  assert.deepEqual(payload.pages[0], { path: "/", pageViews: 9, visits: 5 });
+  assert.doesNotMatch(JSON.stringify(payload), /test-token/);
+});
+
+test("visitor analytics cache prevents repeated Cloudflare reads for five minutes", async () => {
+  const previousCaches = globalThis.caches;
+  const stored = new Map();
+  globalThis.caches = { default: {
+    async match(request) { return stored.get(request.url)?.clone(); },
+    async put(request, response) { stored.set(request.url, response.clone()); }
+  } };
+  try {
+    const env = environment();
+    env.CLOUDFLARE_ANALYTICS_TOKEN = "test-token";
+    let requests = 0;
+    env.ANALYTICS_FETCH = async () => {
+      requests += 1;
+      return Response.json({ data: { viewer: { accounts: [{
+        summary: [{ count: 1, sum: { visits: 1 } }], daily: [], pages: []
+      }] } } });
+    };
+    const loginResponse = await login(env);
+    const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+    const first = await call(env, "/api/admin/analytics?range=30", { headers: { Cookie: cookie } });
+    const second = await call(env, "/api/admin/analytics?range=30", { headers: { Cookie: cookie } });
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(requests, 1);
+  } finally {
+    if (previousCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = previousCaches;
+  }
+});

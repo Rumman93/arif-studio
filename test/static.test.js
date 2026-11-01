@@ -80,3 +80,25 @@ test("profile images have mobile admin upload controls and repeat-safe additive 
   assert.match(migration, /role TEXT PRIMARY KEY/);
   assert.doesNotMatch(migration, /\b(?:ALTER|INSERT|UPDATE|DELETE|DROP)\b/i);
 });
+
+test("security policies allow Cloudflare Web Analytics automatic injection", () => {
+  for (const file of ["worker.js", "public/_headers"]) {
+    const source = readFileSync(file, "utf8");
+    assert.match(source, /script-src 'self' https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js/);
+    assert.match(source, /connect-src 'self' https:\/\/cloudflareinsights\.com/);
+  }
+});
+
+test("admin visitor stats are protected, mobile-ready and do not add D1 storage", () => {
+  const worker = readFileSync("worker.js", "utf8");
+  const admin = readFileSync("public/admin/index.html", "utf8");
+  const styles = readFileSync("public/css/admin.css", "utf8");
+  assert.match(admin, /data-admin-tab="analytics"/);
+  assert.match(admin, /id="analytics-panel"/);
+  assert.match(admin, /data-stats-range="7"/);
+  assert.match(admin, /data-stats-range="30"/);
+  assert.match(styles, /grid-template-columns: repeat\(3, 1fr\)/);
+  assert.match(worker, /if \(!await readSession\(request, env\)\).*401/);
+  assert.match(worker, /ANALYTICS_CACHE_SECONDS = 5 \* 60/);
+  assert.doesNotMatch(worker.match(/async function getAdminAnalytics[\s\S]*?\n}\n\nfunction analyticsWindow/)?.[0] || "", /env\.DB/);
+});

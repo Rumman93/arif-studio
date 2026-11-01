@@ -13,8 +13,12 @@
   var settingsForm = document.getElementById("settings-form");
   var settingsState = document.getElementById("settings-state");
   var settingsError = document.getElementById("settings-error");
+  var analyticsState = document.getElementById("analytics-state");
+  var analyticsContent = document.getElementById("analytics-content");
   var products = [];
   var settingsLoaded = false;
+  var analyticsLoaded = false;
+  var analyticsRange = 7;
   var settingsDirty = false;
   var settingsSnapshot = "";
   var previewUrl = "";
@@ -44,6 +48,7 @@
     dashboardView.hidden = true;
     loginView.hidden = false;
     settingsLoaded = false;
+    analyticsLoaded = false;
     settingsDirty = false;
     document.getElementById("admin-password").focus();
   }
@@ -103,9 +108,86 @@
       });
       document.getElementById("products-panel").hidden = tab !== "products";
       document.getElementById("settings-panel").hidden = tab !== "settings";
+      document.getElementById("analytics-panel").hidden = tab !== "analytics";
       if (tab === "settings" && !settingsLoaded) loadSettings();
+      if (tab === "analytics" && !analyticsLoaded) loadAnalytics();
     });
   });
+
+  document.querySelectorAll("[data-stats-range]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      analyticsRange = Number(button.getAttribute("data-stats-range"));
+      document.querySelectorAll("[data-stats-range]").forEach(function (item) {
+        var active = item === button;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      });
+      loadAnalytics();
+    });
+  });
+
+  async function loadAnalytics() {
+    analyticsState.hidden = false;
+    analyticsState.textContent = "স্ট্যাটস লোড হচ্ছে…";
+    analyticsContent.hidden = true;
+    try {
+      var result = await api("/api/admin/analytics?range=" + analyticsRange);
+      renderAnalytics(result);
+      analyticsLoaded = true;
+      analyticsState.hidden = true;
+      analyticsContent.hidden = false;
+    } catch (error) {
+      analyticsState.textContent = error.message;
+    }
+  }
+
+  function renderAnalytics(stats) {
+    var number = new Intl.NumberFormat("bn-BD", { maximumFractionDigits: 1 });
+    document.getElementById("stats-visits").textContent = number.format(stats.visits || 0);
+    document.getElementById("stats-pageviews").textContent = number.format(stats.pageViews || 0);
+    document.getElementById("stats-pages-per-visit").textContent = number.format(stats.pagesPerVisit || 0);
+
+    var updated = new Date(stats.generatedAt);
+    document.getElementById("stats-updated").textContent = "আপডেট: " + new Intl.DateTimeFormat("bn-BD", {
+      day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Dhaka"
+    }).format(updated);
+
+    var daily = Array.isArray(stats.daily) ? stats.daily : [];
+    var chart = document.getElementById("stats-chart");
+    chart.replaceChildren();
+    chart.style.setProperty("--stats-days", String(daily.length || analyticsRange));
+    var maximum = Math.max(1, ...daily.map(function (day) { return day.pageViews; }));
+    daily.forEach(function (day) {
+      var bar = document.createElement("div");
+      bar.className = "stats-bar";
+      bar.style.height = Math.max(2, Math.round(day.pageViews / maximum * 100)) + "%";
+      bar.title = new Intl.DateTimeFormat("bn-BD", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(day.date + "T00:00:00Z")) + ": " + number.format(day.pageViews) + " পেজ ভিউ";
+      chart.appendChild(bar);
+    });
+    chart.setAttribute("aria-label", analyticsRange + " দিনের দৈনিক পেজ ভিউ; সর্বোচ্চ " + number.format(maximum));
+
+    var pages = document.getElementById("stats-pages");
+    pages.replaceChildren();
+    if (!stats.pages.length) {
+      var emptyRow = document.createElement("tr");
+      var emptyCell = document.createElement("td");
+      emptyCell.className = "stats-empty";
+      emptyCell.colSpan = 3;
+      emptyCell.textContent = "এই সময়ে কোনো পেজ ভিউ পাওয়া যায়নি।";
+      emptyRow.appendChild(emptyCell);
+      pages.appendChild(emptyRow);
+      return;
+    }
+    stats.pages.forEach(function (page) {
+      var row = document.createElement("tr");
+      [page.path, number.format(page.pageViews), number.format(page.visits)].forEach(function (value) {
+        var cell = document.createElement("td");
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+      pages.appendChild(row);
+    });
+  }
 
   async function loadSettings() {
     settingsState.hidden = false;

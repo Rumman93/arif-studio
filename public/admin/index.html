@@ -44,6 +44,7 @@
         <nav class="admin-tabs" aria-label="ম্যানেজার বিভাগ">
           <button type="button" class="active" data-admin-tab="products" aria-controls="products-panel" aria-selected="true">পণ্য</button>
           <button type="button" data-admin-tab="settings" aria-controls="settings-panel" aria-selected="false">ওয়েবসাইট তথ্য</button>
+          <button type="button" data-admin-tab="analytics" aria-controls="analytics-panel" aria-selected="false">ভিজিটর স্ট্যাটস</button>
         </nav>
 
         <section class="admin-panel" id="products-panel">
@@ -152,6 +153,38 @@
             </div>
             <p class="form-error" id="settings-error" role="alert"></p>
           </form>
+        </section>
+
+        <section class="admin-panel" id="analytics-panel" hidden>
+          <div class="stats-heading">
+            <div><h1>ভিজিটর স্ট্যাটস</h1><p>Cloudflare Web Analytics থেকে সংগৃহীত তথ্য।</p></div>
+            <div class="stats-ranges" aria-label="সময় নির্বাচন">
+              <button type="button" class="active" data-stats-range="7" aria-pressed="true">৭ দিন</button>
+              <button type="button" data-stats-range="30" aria-pressed="false">৩০ দিন</button>
+            </div>
+          </div>
+          <div class="admin-state" id="analytics-state" aria-live="polite">স্ট্যাটস লোড হচ্ছে…</div>
+          <div class="analytics-content" id="analytics-content" hidden>
+            <div class="stats-summary">
+              <article><span>ভিজিট</span><strong id="stats-visits">০</strong></article>
+              <article><span>পেজ ভিউ</span><strong id="stats-pageviews">০</strong></article>
+              <article><span>প্রতি ভিজিটে পেজ</span><strong id="stats-pages-per-visit">০</strong></article>
+            </div>
+            <section class="stats-card" aria-labelledby="stats-trend-title">
+              <div class="stats-card-title"><h2 id="stats-trend-title">দৈনিক পেজ ভিউ</h2><span id="stats-updated"></span></div>
+              <div class="stats-chart" id="stats-chart" role="img" aria-label="দৈনিক পেজ ভিউ চার্ট"></div>
+            </section>
+            <section class="stats-card" aria-labelledby="stats-pages-title">
+              <h2 id="stats-pages-title">জনপ্রিয় পেজ</h2>
+              <div class="stats-table-wrap">
+                <table class="stats-table">
+                  <thead><tr><th>পেজ</th><th>ভিউ</th><th>ভিজিট</th></tr></thead>
+                  <tbody id="stats-pages"></tbody>
+                </table>
+              </div>
+            </section>
+            <p class="stats-note">ডেটা সর্বোচ্চ ৫ মিনিট ক্যাশ থাকে এবং Cloudflare-এ নতুন ভিজিট দেখা দিতে কিছু সময় লাগতে পারে।</p>
+          </div>
         </section>
       </div>
     </section>
