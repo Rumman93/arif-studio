@@ -92,13 +92,30 @@ test("security policies allow Cloudflare Web Analytics automatic injection", () 
 test("admin visitor stats are protected, mobile-ready and do not add D1 storage", () => {
   const worker = readFileSync("worker.js", "utf8");
   const admin = readFileSync("public/admin/index.html", "utf8");
+  const adminScript = readFileSync("public/js/admin.js", "utf8");
   const styles = readFileSync("public/css/admin.css", "utf8");
   assert.match(admin, /data-admin-tab="analytics"/);
   assert.match(admin, /id="analytics-panel"/);
+  assert.match(admin, /class="active" data-stats-range="1" aria-pressed="true">শেষ ২৪ ঘণ্টা/);
   assert.match(admin, /data-stats-range="7"/);
   assert.match(admin, /data-stats-range="30"/);
+  for (const id of ["stats-countries", "stats-devices", "stats-browsers", "stats-operating-systems", "stats-referrers"]) {
+    assert.match(admin, new RegExp(`id="${id}"`));
+  }
+  assert.match(admin, /id="stats-top-page"/);
   assert.match(styles, /grid-template-columns: repeat\(3, 1fr\)/);
+  assert.match(styles, /\.stats-primary-grid \{[^}]*display: grid/);
+  assert.match(styles, /\.stats-breakdowns \{[^}]*grid-template-columns: 1fr/);
+  assert.match(styles, /@media \(min-width: 720px\)[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(adminScript, /createElementNS\(namespace, "svg"\)/);
+  assert.match(adminScript, /document\.createElement\("progress"\)/);
+  assert.match(adminScript, /getElementById\("stats-top-page"\)/);
+  assert.doesNotMatch(adminScript, /chart\.style|bar\.style/);
   assert.match(worker, /if \(!await readSession\(request, env\)\).*401/);
   assert.match(worker, /ANALYTICS_CACHE_SECONDS = 5 \* 60/);
+  assert.match(worker, /range !== 1 && range !== 7 && range !== 30/);
+  for (const dimension of ["countryName", "deviceType", "userAgentBrowser", "userAgentOS", "refererHost"]) {
+    assert.match(worker, new RegExp(`dimensions \\{ ${dimension} \\}`));
+  }
   assert.doesNotMatch(worker.match(/async function getAdminAnalytics[\s\S]*?\n}\n\nfunction analyticsWindow/)?.[0] || "", /env\.DB/);
 });

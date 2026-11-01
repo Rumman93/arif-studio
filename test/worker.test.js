@@ -389,6 +389,24 @@ test("visitor analytics require authentication and accept only supported ranges"
   assert.equal(requests, 0);
 });
 
+test("visitor analytics default to an exact rolling 24 hour window", async () => {
+  const env = environment();
+  env.CLOUDFLARE_ANALYTICS_TOKEN = "test-token";
+  let variables;
+  env.ANALYTICS_FETCH = async (url, options) => {
+    variables = JSON.parse(options.body).variables;
+    return Response.json({ data: { viewer: { accounts: [{ summary: [], daily: [], pages: [] }] } } });
+  };
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  const response = await call(env, "/api/admin/analytics", { headers: { Cookie: cookie } });
+  const payload = await response.json();
+  assert.equal(response.status, 200);
+  assert.equal(payload.range, 1);
+  assert.equal(new Date(variables.end).getTime() - new Date(variables.start).getTime(), 24 * 60 * 60 * 1000);
+  assert.ok(payload.daily.length >= 1 && payload.daily.length <= 2);
+});
+
 test("visitor analytics use one Cloudflare request, no D1 query and return only safe aggregated data", async () => {
   const env = environment();
   env.CLOUDFLARE_ANALYTICS_TOKEN = "test-token-that-must-not-leak";
@@ -405,6 +423,17 @@ test("visitor analytics use one Cloudflare request, no D1 query and return only 
         pages: [
           { count: 9, sum: { visits: 5 }, dimensions: { requestPath: "/" } },
           { count: 3, sum: { visits: 2 }, dimensions: { requestPath: "/accessories" } }
+        ],
+        countries: [
+          { count: 10, sum: { visits: 6 }, dimensions: { countryName: "Bangladesh" } },
+          { count: 2, sum: { visits: 1 }, dimensions: { countryName: "United States" } }
+        ],
+        devices: [{ count: 11, sum: { visits: 6 }, dimensions: { deviceType: "mobile" } }],
+        browsers: [{ count: 10, sum: { visits: 6 }, dimensions: { userAgentBrowser: "Chrome" } }],
+        operatingSystems: [{ count: 9, sum: { visits: 5 }, dimensions: { userAgentOS: "Android" } }],
+        referrers: [
+          { count: 8, sum: { visits: 5 }, dimensions: { refererHost: "" } },
+          { count: 4, sum: { visits: 2 }, dimensions: { refererHost: "google.com" } }
         ]
       }] } }
     });
@@ -421,8 +450,12 @@ test("visitor analytics use one Cloudflare request, no D1 query and return only 
   assert.equal(requestDetails.options.headers.Authorization, "Bearer test-token-that-must-not-leak");
   const query = JSON.parse(requestDetails.options.body);
   assert.equal(query.variables.accountTag, "e2b1b46e43b33d3704fbbcea77ab9aba");
-  assert.equal(query.variables.siteTag, "aacbd0c036c14159b3f8be934ac4fa45");
   assert.equal(query.variables.host, "arifstudio.pages.dev");
+  assert.equal(query.variables.siteTag, undefined);
+  assert.doesNotMatch(query.query, /siteTag/);
+  for (const dimension of ["countryName", "deviceType", "userAgentBrowser", "userAgentOS", "refererHost"]) {
+    assert.match(query.query, new RegExp(`dimensions \\{ ${dimension} \\}`));
+  }
 
   const payload = await response.json();
   assert.equal(payload.pageViews, 12);
@@ -430,6 +463,11 @@ test("visitor analytics use one Cloudflare request, no D1 query and return only 
   assert.equal(payload.pagesPerVisit, 1.7);
   assert.equal(payload.daily.length, 7);
   assert.deepEqual(payload.pages[0], { path: "/", pageViews: 9, visits: 5 });
+  assert.deepEqual(payload.countries[0], { label: "Bangladesh", pageViews: 10, visits: 6 });
+  assert.deepEqual(payload.devices[0], { label: "mobile", pageViews: 11, visits: 6 });
+  assert.deepEqual(payload.browsers[0], { label: "Chrome", pageViews: 10, visits: 6 });
+  assert.deepEqual(payload.operatingSystems[0], { label: "Android", pageViews: 9, visits: 5 });
+  assert.deepEqual(payload.referrers[0], { label: "Direct / Bookmarks", pageViews: 8, visits: 5 });
   assert.doesNotMatch(JSON.stringify(payload), /test-token/);
 });
 

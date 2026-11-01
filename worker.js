@@ -6,7 +6,6 @@ const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
 const ANALYTICS_CACHE_SECONDS = 5 * 60;
 const CLOUDFLARE_ACCOUNT_TAG = "e2b1b46e43b33d3704fbbcea77ab9aba";
-const CLOUDFLARE_SITE_TAG = "aacbd0c036c14159b3f8be934ac4fa45";
 const ANALYTICS_HOST = "arifstudio.pages.dev";
 
 export default {
@@ -98,9 +97,9 @@ async function getAdminAnalytics(request, env, ctx) {
     return json({ error: "Visitor analytics are not configured." }, 503, { "Cache-Control": "no-store" });
   }
 
-  const range = Number(new URL(request.url).searchParams.get("range") || 7);
-  if (range !== 7 && range !== 30) {
-    return json({ error: "Choose a 7 or 30 day range." }, 400, { "Cache-Control": "no-store" });
+  const range = Number(new URL(request.url).searchParams.get("range") || 1);
+  if (range !== 1 && range !== 7 && range !== 30) {
+    return json({ error: "Choose the last 24 hours, 7 days or 30 days." }, 400, { "Cache-Control": "no-store" });
   }
 
   const cache = defaultCache();
@@ -115,23 +114,48 @@ async function getAdminAnalytics(request, env, ctx) {
   }
 
   const window = analyticsWindow(range);
-  const query = `query VisitorStats($accountTag: string!, $siteTag: string!, $host: string!, $start: Time!, $end: Time!) {
+  const query = `query VisitorStats($accountTag: string!, $host: string!, $start: Time!, $end: Time!) {
     viewer {
       accounts(filter: { accountTag: $accountTag }) {
         summary: rumPageloadEventsAdaptiveGroups(
           limit: 1
-          filter: { siteTag: $siteTag, requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
         ) { count sum { visits } }
         daily: rumPageloadEventsAdaptiveGroups(
           limit: 31
           orderBy: [date_ASC]
-          filter: { siteTag: $siteTag, requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
         ) { count sum { visits } dimensions { date } }
         pages: rumPageloadEventsAdaptiveGroups(
           limit: 10
           orderBy: [count_DESC]
-          filter: { siteTag: $siteTag, requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
         ) { count sum { visits } dimensions { requestPath } }
+        countries: rumPageloadEventsAdaptiveGroups(
+          limit: 10
+          orderBy: [sum_visits_DESC]
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } dimensions { countryName } }
+        devices: rumPageloadEventsAdaptiveGroups(
+          limit: 10
+          orderBy: [sum_visits_DESC]
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } dimensions { deviceType } }
+        browsers: rumPageloadEventsAdaptiveGroups(
+          limit: 10
+          orderBy: [sum_visits_DESC]
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } dimensions { userAgentBrowser } }
+        operatingSystems: rumPageloadEventsAdaptiveGroups(
+          limit: 10
+          orderBy: [sum_visits_DESC]
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } dimensions { userAgentOS } }
+        referrers: rumPageloadEventsAdaptiveGroups(
+          limit: 10
+          orderBy: [sum_visits_DESC]
+          filter: { requestHost: $host, datetime_geq: $start, datetime_lt: $end }
+        ) { count sum { visits } dimensions { refererHost } }
       }
     }
   }`;
@@ -150,7 +174,6 @@ async function getAdminAnalytics(request, env, ctx) {
         query,
         variables: {
           accountTag: CLOUDFLARE_ACCOUNT_TAG,
-          siteTag: CLOUDFLARE_SITE_TAG,
           host: ANALYTICS_HOST,
           start: window.start,
           end: window.end
@@ -181,6 +204,10 @@ async function getAdminAnalytics(request, env, ctx) {
 
 function analyticsWindow(range, current = new Date()) {
   const end = new Date(current);
+  if (range === 1) {
+    const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+    return { start: start.toISOString(), end: end.toISOString(), startDate: start.toISOString().slice(0, 10) };
+  }
   const start = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
   start.setUTCDate(start.getUTCDate() - (range - 1));
   return { start: start.toISOString(), end: end.toISOString(), startDate: start.toISOString().slice(0, 10) };
@@ -192,11 +219,13 @@ function analyticsPayload(account, range, window) {
   const visits = safeCount(summary.sum?.visits);
   const dailyValues = new Map((account.daily || []).map(item => [item.dimensions?.date, item]));
   const start = new Date(`${window.startDate}T00:00:00.000Z`);
+  const endDate = window.end.slice(0, 10);
   const daily = [];
-  for (let index = 0; index < range; index += 1) {
+  for (let index = 0; ; index += 1) {
     const date = new Date(start);
     date.setUTCDate(start.getUTCDate() + index);
     const key = date.toISOString().slice(0, 10);
+    if (key > endDate) break;
     const item = dailyValues.get(key) || {};
     daily.push({ date: key, pageViews: safeCount(item.count), visits: safeCount(item.sum?.visits) });
   }
@@ -212,7 +241,12 @@ function analyticsPayload(account, range, window) {
     visits,
     pagesPerVisit: visits ? Number((pageViews / visits).toFixed(1)) : 0,
     daily,
-    pages
+    pages,
+    countries: analyticsBreakdown(account.countries, "countryName", "Unknown country"),
+    devices: analyticsBreakdown(account.devices, "deviceType", "Unknown device"),
+    browsers: analyticsBreakdown(account.browsers, "userAgentBrowser", "Unknown browser"),
+    operatingSystems: analyticsBreakdown(account.operatingSystems, "userAgentOS", "Unknown operating system"),
+    referrers: analyticsBreakdown(account.referrers, "refererHost", "Direct / Bookmarks")
   };
 }
 
@@ -226,8 +260,16 @@ function cleanAnalyticsPath(value) {
   return value.slice(0, 240);
 }
 
+function analyticsBreakdown(rows, dimension, fallback) {
+  return (rows || []).map(item => {
+    const value = item.dimensions?.[dimension];
+    const label = typeof value === "string" && value.trim() ? value.trim().slice(0, 120) : fallback;
+    return { label, pageViews: safeCount(item.count), visits: safeCount(item.sum?.visits) };
+  }).filter(item => item.pageViews || item.visits).slice(0, 10);
+}
+
 function analyticsCacheKey(request, range) {
-  return new Request(new URL(`/api/admin/analytics?range=${range}`, request.url).toString(), { method: "GET" });
+  return new Request(new URL(`/api/admin/analytics?range=${range}&v=3`, request.url).toString(), { method: "GET" });
 }
 
 function putAnalyticsCache(cache, key, payload, ctx) {

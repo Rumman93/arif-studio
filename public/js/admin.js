@@ -18,7 +18,7 @@
   var products = [];
   var settingsLoaded = false;
   var analyticsLoaded = false;
-  var analyticsRange = 7;
+  var analyticsRange = 1;
   var settingsDirty = false;
   var settingsSnapshot = "";
   var previewUrl = "";
@@ -143,9 +143,11 @@
 
   function renderAnalytics(stats) {
     var number = new Intl.NumberFormat("bn-BD", { maximumFractionDigits: 1 });
+    var topPages = Array.isArray(stats.pages) ? stats.pages : [];
     document.getElementById("stats-visits").textContent = number.format(stats.visits || 0);
     document.getElementById("stats-pageviews").textContent = number.format(stats.pageViews || 0);
     document.getElementById("stats-pages-per-visit").textContent = number.format(stats.pagesPerVisit || 0);
+    document.getElementById("stats-top-page").textContent = topPages.length ? topPages[0].path : "—";
 
     var updated = new Date(stats.generatedAt);
     document.getElementById("stats-updated").textContent = "আপডেট: " + new Intl.DateTimeFormat("bn-BD", {
@@ -155,20 +157,35 @@
     var daily = Array.isArray(stats.daily) ? stats.daily : [];
     var chart = document.getElementById("stats-chart");
     chart.replaceChildren();
-    chart.style.setProperty("--stats-days", String(daily.length || analyticsRange));
     var maximum = Math.max(1, ...daily.map(function (day) { return day.pageViews; }));
-    daily.forEach(function (day) {
-      var bar = document.createElement("div");
-      bar.className = "stats-bar";
-      bar.style.height = Math.max(2, Math.round(day.pageViews / maximum * 100)) + "%";
-      bar.title = new Intl.DateTimeFormat("bn-BD", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(day.date + "T00:00:00Z")) + ": " + number.format(day.pageViews) + " পেজ ভিউ";
-      chart.appendChild(bar);
+    var namespace = "http://www.w3.org/2000/svg";
+    var svg = document.createElementNS(namespace, "svg");
+    svg.setAttribute("viewBox", "0 0 600 160");
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.setAttribute("aria-hidden", "true");
+    var gap = daily.length > 15 ? 3 : 6;
+    var barWidth = daily.length ? (600 - gap * (daily.length - 1)) / daily.length : 600;
+    daily.forEach(function (day, index) {
+      var height = Math.max(2, Math.round(day.pageViews / maximum * 156));
+      var bar = document.createElementNS(namespace, "rect");
+      bar.setAttribute("x", String(index * (barWidth + gap)));
+      bar.setAttribute("y", String(160 - height));
+      bar.setAttribute("width", String(barWidth));
+      bar.setAttribute("height", String(height));
+      bar.setAttribute("rx", "3");
+      bar.setAttribute("fill", "#19d69b");
+      var title = document.createElementNS(namespace, "title");
+      title.textContent = new Intl.DateTimeFormat("bn-BD", { day: "numeric", month: "short", timeZone: "UTC" }).format(new Date(day.date + "T00:00:00Z")) + ": " + number.format(day.pageViews) + " পেজ ভিউ";
+      bar.appendChild(title);
+      svg.appendChild(bar);
     });
-    chart.setAttribute("aria-label", analyticsRange + " দিনের দৈনিক পেজ ভিউ; সর্বোচ্চ " + number.format(maximum));
+    chart.appendChild(svg);
+    var rangeLabel = analyticsRange === 1 ? "শেষ ২৪ ঘণ্টার" : analyticsRange + " দিনের";
+    chart.setAttribute("aria-label", rangeLabel + " পেজ ভিউ ট্রেন্ড; সর্বোচ্চ " + number.format(maximum));
 
     var pages = document.getElementById("stats-pages");
     pages.replaceChildren();
-    if (!stats.pages.length) {
+    if (!topPages.length) {
       var emptyRow = document.createElement("tr");
       var emptyCell = document.createElement("td");
       emptyCell.className = "stats-empty";
@@ -176,17 +193,56 @@
       emptyCell.textContent = "এই সময়ে কোনো পেজ ভিউ পাওয়া যায়নি।";
       emptyRow.appendChild(emptyCell);
       pages.appendChild(emptyRow);
+    } else {
+      topPages.forEach(function (page) {
+        var row = document.createElement("tr");
+        [page.path, number.format(page.pageViews), number.format(page.visits)].forEach(function (value) {
+          var cell = document.createElement("td");
+          cell.textContent = value;
+          row.appendChild(cell);
+        });
+        pages.appendChild(row);
+      });
+    }
+
+    renderBreakdown("stats-countries", stats.countries, number);
+    renderBreakdown("stats-devices", stats.devices, number);
+    renderBreakdown("stats-browsers", stats.browsers, number);
+    renderBreakdown("stats-operating-systems", stats.operatingSystems, number);
+    renderBreakdown("stats-referrers", stats.referrers, number);
+  }
+
+  function renderBreakdown(id, items, number) {
+    var target = document.getElementById(id);
+    var values = Array.isArray(items) ? items : [];
+    target.replaceChildren();
+    if (!values.length) {
+      var empty = document.createElement("p");
+      empty.className = "stats-breakdown-empty";
+      empty.textContent = "এখনও পর্যাপ্ত তথ্য নেই।";
+      target.appendChild(empty);
       return;
     }
-    stats.pages.forEach(function (page) {
-      var row = document.createElement("tr");
-      [page.path, number.format(page.pageViews), number.format(page.visits)].forEach(function (value) {
-        var cell = document.createElement("td");
-        cell.textContent = value;
-        row.appendChild(cell);
-      });
-      pages.appendChild(row);
+    var maximumVisits = Math.max(0, ...values.map(function (item) { return item.visits; }));
+    var maximum = Math.max(1, maximumVisits || Math.max(...values.map(function (item) { return item.pageViews; })));
+    var list = document.createElement("ol");
+    list.className = "stats-breakdown-list";
+    values.forEach(function (item) {
+      var row = document.createElement("li");
+      var heading = document.createElement("div");
+      var label = document.createElement("strong");
+      var metric = document.createElement("span");
+      label.textContent = item.label;
+      metric.textContent = number.format(item.visits) + " ভিজিট · " + number.format(item.pageViews) + " ভিউ";
+      heading.append(label, metric);
+      var progress = document.createElement("progress");
+      progress.max = maximum;
+      progress.value = maximumVisits ? item.visits : item.pageViews;
+      progress.setAttribute("aria-label", item.label + ": " + metric.textContent);
+      row.append(heading, progress);
+      list.appendChild(row);
     });
+    target.appendChild(list);
   }
 
   async function loadSettings() {

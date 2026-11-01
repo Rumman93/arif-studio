@@ -157,33 +157,81 @@
 
         <section class="admin-panel" id="analytics-panel" hidden>
           <div class="stats-heading">
-            <div><h1>ভিজিটর স্ট্যাটস</h1><p>Cloudflare Web Analytics থেকে সংগৃহীত তথ্য।</p></div>
+            <div>
+              <div class="stats-kicker"><span aria-hidden="true"></span>Cloudflare অ্যানালিটিক্স</div>
+              <h1>ভিজিটর ড্যাশবোর্ড</h1>
+              <p>ওয়েবসাইটের ট্রাফিক ও ভিজিটরের সংক্ষিপ্ত চিত্র।</p>
+            </div>
             <div class="stats-ranges" aria-label="সময় নির্বাচন">
-              <button type="button" class="active" data-stats-range="7" aria-pressed="true">৭ দিন</button>
+              <button type="button" class="active" data-stats-range="1" aria-pressed="true">শেষ ২৪ ঘণ্টা</button>
+              <button type="button" data-stats-range="7" aria-pressed="false">৭ দিন</button>
               <button type="button" data-stats-range="30" aria-pressed="false">৩০ দিন</button>
             </div>
           </div>
           <div class="admin-state" id="analytics-state" aria-live="polite">স্ট্যাটস লোড হচ্ছে…</div>
           <div class="analytics-content" id="analytics-content" hidden>
             <div class="stats-summary">
-              <article><span>ভিজিট</span><strong id="stats-visits">০</strong></article>
-              <article><span>পেজ ভিউ</span><strong id="stats-pageviews">০</strong></article>
-              <article><span>প্রতি ভিজিটে পেজ</span><strong id="stats-pages-per-visit">০</strong></article>
+              <article class="stats-metric stats-metric-visits">
+                <div><span>ভিজিট</span><span class="stats-metric-icon" aria-hidden="true">↗</span></div>
+                <strong id="stats-visits">০</strong><small>নির্বাচিত সময়ে</small>
+              </article>
+              <article class="stats-metric stats-metric-pageviews">
+                <div><span>পেজ ভিউ</span><span class="stats-metric-icon" aria-hidden="true">◫</span></div>
+                <strong id="stats-pageviews">০</strong><small>মোট দেখা পেজ</small>
+              </article>
+              <article class="stats-metric stats-metric-depth">
+                <div><span>প্রতি ভিজিটে পেজ</span><span class="stats-metric-icon" aria-hidden="true">◎</span></div>
+                <strong id="stats-pages-per-visit">০</strong><small>গড় এনগেজমেন্ট</small>
+              </article>
+              <article class="stats-metric stats-metric-top-page">
+                <div><span>শীর্ষ পেজ</span><span class="stats-metric-icon" aria-hidden="true">◆</span></div>
+                <strong id="stats-top-page">—</strong><small>সবচেয়ে বেশি দেখা</small>
+              </article>
             </div>
-            <section class="stats-card" aria-labelledby="stats-trend-title">
-              <div class="stats-card-title"><h2 id="stats-trend-title">দৈনিক পেজ ভিউ</h2><span id="stats-updated"></span></div>
-              <div class="stats-chart" id="stats-chart" role="img" aria-label="দৈনিক পেজ ভিউ চার্ট"></div>
-            </section>
-            <section class="stats-card" aria-labelledby="stats-pages-title">
-              <h2 id="stats-pages-title">জনপ্রিয় পেজ</h2>
-              <div class="stats-table-wrap">
-                <table class="stats-table">
-                  <thead><tr><th>পেজ</th><th>ভিউ</th><th>ভিজিট</th></tr></thead>
-                  <tbody id="stats-pages"></tbody>
-                </table>
-              </div>
-            </section>
-            <p class="stats-note">ডেটা সর্বোচ্চ ৫ মিনিট ক্যাশ থাকে এবং Cloudflare-এ নতুন ভিজিট দেখা দিতে কিছু সময় লাগতে পারে।</p>
+            <div class="stats-primary-grid">
+              <section class="stats-card stats-trend-card" aria-labelledby="stats-trend-title">
+                <div class="stats-card-title">
+                  <div><span class="stats-card-kicker">ট্রাফিক ওভারভিউ</span><h2 id="stats-trend-title">পেজ ভিউ ট্রেন্ড</h2></div>
+                  <span id="stats-updated"></span>
+                </div>
+                <div class="stats-chart" id="stats-chart" role="img" aria-label="পেজ ভিউ ট্রেন্ড চার্ট"></div>
+              </section>
+              <section class="stats-card stats-pages-card" aria-labelledby="stats-pages-title">
+                <div class="stats-card-title"><div><span class="stats-card-kicker">সেরা কনটেন্ট</span><h2 id="stats-pages-title">জনপ্রিয় পেজ</h2></div></div>
+                <div class="stats-table-wrap">
+                  <table class="stats-table">
+                    <thead><tr><th>পেজ</th><th>ভিউ</th><th>ভিজিট</th></tr></thead>
+                    <tbody id="stats-pages"></tbody>
+                  </table>
+                </div>
+              </section>
+            </div>
+            <div class="stats-breakdowns">
+              <section class="stats-card" aria-labelledby="stats-countries-title">
+                <h2 id="stats-countries-title">ভিজিটরের দেশ</h2>
+                <div class="stats-breakdown" id="stats-countries"></div>
+              </section>
+              <section class="stats-card" aria-labelledby="stats-devices-title">
+                <h2 id="stats-devices-title">ডিভাইস</h2>
+                <div class="stats-breakdown" id="stats-devices"></div>
+              </section>
+              <section class="stats-card" aria-labelledby="stats-browsers-title">
+                <h2 id="stats-browsers-title">ব্রাউজার</h2>
+                <div class="stats-breakdown" id="stats-browsers"></div>
+              </section>
+              <section class="stats-card" aria-labelledby="stats-os-title">
+                <h2 id="stats-os-title">অপারেটিং সিস্টেম</h2>
+                <div class="stats-breakdown" id="stats-operating-systems"></div>
+              </section>
+              <section class="stats-card" aria-labelledby="stats-referrers-title">
+                <h2 id="stats-referrers-title">ভিজিটর কোথা থেকে এসেছে</h2>
+                <div class="stats-breakdown" id="stats-referrers"></div>
+              </section>
+            </div>
+            <div class="stats-footer">
+              <span>অটো রিফ্রেশ ক্যাশ: সর্বোচ্চ ৫ মিনিট</span>
+              <span>Asia/Dhaka · Cloudflare Web Analytics</span>
+            </div>
           </div>
         </section>
       </div>
