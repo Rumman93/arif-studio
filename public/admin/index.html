@@ -251,10 +251,9 @@
       <input id="product-name-en" type="text" maxlength="120" placeholder="Example: Fast charger">
       <label for="product-price">দাম (৳) <span>*</span></label>
       <input id="product-price" type="number" min="0" max="999999999" step="1" inputmode="numeric" required placeholder="500">
-      <label class="stock-control" for="product-stock">
-        <input id="product-stock" type="checkbox" checked>
-        <span><strong>স্টকে আছে</strong><small>স্টক শেষ হলে টিক তুলে দিন</small></span>
-      </label>
+      <label for="product-stock-quantity">স্টক সংখ্যা <span>*</span></label>
+      <input id="product-stock-quantity" type="number" min="0" max="1000" step="1" inputmode="numeric" value="10" required>
+      <p class="field-help">নতুন পণ্যে ডিফল্ট ১০। স্টক শেষ হলে ০ লিখুন।</p>
       <label for="product-image">পণ্যের ছবি <span id="image-required">*</span></label>
       <input id="product-image" type="file" accept="image/jpeg,image/png,image/webp" capture="environment">
       <p class="field-help">JPG, PNG বা WebP। ছবি 720px WebP-তে রূপান্তর করে দ্রুত লোডের জন্য ছোট করা হবে।</p>
@@ -264,6 +263,23 @@
         <button class="primary-button" id="save-product" type="submit">পণ্য সেভ করুন</button>
       </div>
       <p class="form-error" id="product-error" role="alert"></p>
+    </form>
+  </dialog>
+
+  <dialog id="delete-dialog" aria-labelledby="delete-dialog-title" aria-describedby="delete-warning">
+    <form id="delete-form">
+      <div class="dialog-header">
+        <div><p class="eyebrow">নিরাপত্তা যাচাই</p><h2 id="delete-dialog-title">পণ্য স্থায়ীভাবে ডিলিট করুন</h2></div>
+        <button class="icon-button" id="close-delete-dialog" type="button" aria-label="বন্ধ করুন">×</button>
+      </div>
+      <p class="delete-warning" id="delete-warning"><strong>সতর্কতা:</strong> <span id="delete-product-name"></span> পণ্য এবং এর ছবি স্থায়ীভাবে মুছে যাবে। এটি ফিরিয়ে আনা যাবে না।</p>
+      <label for="delete-password">নিশ্চিত করতে অ্যাডমিন পাসওয়ার্ড লিখুন <span>*</span></label>
+      <input id="delete-password" type="password" maxlength="256" autocomplete="current-password" required>
+      <div class="dialog-actions">
+        <button class="secondary-button" id="cancel-delete" type="button">বাতিল</button>
+        <button class="danger-button" id="confirm-delete" type="submit">স্থায়ীভাবে ডিলিট করুন</button>
+      </div>
+      <p class="form-error" id="delete-error" role="alert"></p>
     </form>
   </dialog>
 

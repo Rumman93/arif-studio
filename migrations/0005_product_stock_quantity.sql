@@ -1,0 +1,3 @@
+ALTER TABLE products
+ADD COLUMN stock_quantity INTEGER DEFAULT 10
+CHECK (stock_quantity BETWEEN 0 AND 1000);

@@ -28,7 +28,9 @@ class MockD1 {
       args: [],
       bind(...args) { this.args = args; return this; },
       async all() {
-        if (sql.includes("FROM products WHERE image_data")) return { results: database.products.filter(item => item.image_data) };
+        if (sql.includes("FROM products")) {
+          return { results: database.products.filter(item => item.image_data).map(item => ({ ...item })) };
+        }
         throw new Error(`Unhandled all query: ${sql}`);
       },
       async first() {
@@ -67,16 +69,16 @@ class MockD1 {
           const now = Math.floor(Date.now() / 1000);
           database.products.push({
             id: this.args[0], name: this.args[1], name_en: this.args[2], price: this.args[3],
-            in_stock: this.args[4], image_small_key: this.args[5], image_large_key: this.args[6],
-            image_ratio: this.args[7], image_data: this.args[8], image_etag: this.args[9], created_at: now, updated_at: now
+            in_stock: this.args[4], stock_quantity: this.args[5], image_small_key: this.args[6], image_large_key: this.args[7],
+            image_ratio: this.args[8], image_data: this.args[9], image_etag: this.args[10], created_at: now, updated_at: now
           });
           return { success: true };
         }
         if (sql.startsWith("UPDATE products")) {
           const withImage = sql.includes("image_data = ?");
-          const item = database.products.find(product => product.id === this.args[withImage ? 7 : 4]);
-          Object.assign(item, { name: this.args[0], name_en: this.args[1], price: this.args[2], in_stock: this.args[3], updated_at: Math.floor(Date.now() / 1000) });
-          if (withImage) Object.assign(item, { image_ratio: this.args[4], image_data: this.args[5], image_etag: this.args[6] });
+          const item = database.products.find(product => product.id === this.args[withImage ? 8 : 5]);
+          Object.assign(item, { name: this.args[0], name_en: this.args[1], price: this.args[2], in_stock: this.args[3], stock_quantity: this.args[4], updated_at: Math.floor(Date.now() / 1000) });
+          if (withImage) Object.assign(item, { image_ratio: this.args[5], image_data: this.args[6], image_etag: this.args[7] });
           return { success: true };
         }
         if (sql.startsWith("DELETE FROM products")) {
@@ -143,7 +145,7 @@ function productForm(overrides = {}) {
   form.set("name", overrides.name || "ফাস্ট চার্জার");
   form.set("nameEn", overrides.nameEn || "Fast charger");
   form.set("price", overrides.price || "500");
-  form.set("inStock", overrides.inStock || "true");
+  form.set("stockQuantity", overrides.stockQuantity === undefined ? "10" : overrides.stockQuantity);
   form.set("imageRatio", overrides.imageRatio || "1.25");
   if (!overrides.withoutImages) {
     form.set("image", new File([new Uint8Array([1, 2, 3, 4])], "image.webp", { type: "image/webp" }));
@@ -175,7 +177,7 @@ test("public product listing uses one query and returns safe response fields", a
   env.DB.products.push({
     id: "a", name: "চার্জার", name_en: "Charger", price: 450, in_stock: 1,
     image_small_key: "d1/a.webp", image_large_key: "d1/a-large.webp",
-    image_ratio: 1, image_data: [1], image_etag: "etag", updated_at: 1, created_at: 1
+    stock_quantity: null, image_ratio: 1, image_data: [1], image_etag: "etag", updated_at: 1, created_at: 1
   });
   const response = await call(env, "/api/products");
   assert.equal(response.status, 200);
@@ -183,7 +185,91 @@ test("public product listing uses one query and returns safe response fields", a
   const payload = await response.json();
   assert.equal(payload.products[0].imageUrl, "/product-images/a.webp?v=d1-etag");
   assert.equal(payload.products[0].inStock, true);
+  assert.equal(payload.products[0].stockQuantity, 10);
   assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+});
+
+test("public product cache reuses one joined D1 read", async () => {
+  const previousCaches = globalThis.caches;
+  const stored = new Map();
+  globalThis.caches = { default: {
+    async match(request) { return stored.get(request.url)?.clone(); },
+    async put(request, response) { stored.set(request.url, response.clone()); },
+    async delete(request) { return stored.delete(request.url); }
+  } };
+  try {
+    const env = environment();
+    env.DB.products.push({
+      id: "cached", name: "কেবল", name_en: "Cable", price: 200, in_stock: 1,
+      image_ratio: 1, image_data: [1], image_etag: "etag", updated_at: 1, created_at: 1
+    });
+    const first = await call(env, "/api/products");
+    const second = await call(env, "/api/products");
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(env.DB.queryCount, 1);
+    assert.equal((await second.json()).products[0].stockQuantity, 10);
+  } finally {
+    if (previousCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = previousCaches;
+  }
+});
+
+test("product mutations invalidate the shared public cache", async () => {
+  const previousCaches = globalThis.caches;
+  const stored = new Map();
+  let deletions = 0;
+  globalThis.caches = { default: {
+    async match(request) { return stored.get(request.url)?.clone(); },
+    async put(request, response) { stored.set(request.url, response.clone()); },
+    async delete(request) { deletions += 1; return stored.delete(request.url); }
+  } };
+  try {
+    const env = environment();
+    await call(env, "/api/products");
+    assert.equal(stored.size, 1);
+
+    const loginResponse = await login(env);
+    const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+    const created = await call(env, "/api/admin/products", {
+      method: "POST",
+      headers: { Origin: "https://studio.test", Cookie: cookie },
+      body: productForm()
+    });
+    assert.equal(created.status, 201);
+    assert.equal(deletions, 1);
+    assert.equal(stored.size, 0);
+
+    const beforeRefresh = env.DB.queryCount;
+    await call(env, "/api/products");
+    assert.equal(env.DB.queryCount, beforeRefresh + 1);
+  } finally {
+    if (previousCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = previousCaches;
+  }
+});
+
+test("accessories page includes crawlable product cards and safe initial data", async () => {
+  const env = environment();
+  env.DB.products.push({
+    id: "crawl", name: "<চার্জার>", name_en: "Charger", price: 500, in_stock: 1,
+    image_ratio: 1, image_data: [1], image_etag: "etag", updated_at: 1, created_at: 1
+  });
+  env.ASSETS.fetch = request => {
+    assert.equal(new URL(request.url).pathname, "/accessories");
+    return new Response(
+      '<main><div id="product-grid"><!-- SERVER_PRODUCT_CARDS --></div><script id="initial-products" type="application/json"><!-- INITIAL_PRODUCTS --></script></main>',
+      { headers: { "Content-Type": "text/html" } }
+    );
+  };
+  const response = await call(env, "/accessories");
+  const html = await response.text();
+  assert.equal(response.status, 200);
+  assert.equal(env.DB.queryCount, 1);
+  assert.match(html, /class="product-card"/);
+  assert.match(html, /&lt;চার্জার&gt;/);
+  assert.match(html, /\\u003cচার্জার>/);
+  assert.doesNotMatch(html, /<চার্জার>/);
 });
 
 test("admin login rejects wrong password and issues a secure session for the correct password", async () => {
@@ -198,6 +284,7 @@ test("admin login rejects wrong password and issues a secure session for the cor
   assert.match(cookie, /HttpOnly/);
   assert.match(cookie, /Secure/);
   assert.match(cookie, /SameSite=Strict/);
+  assert.match(cookie, /Max-Age=3600/);
 });
 
 test("mutations require both a valid session and the same origin", async () => {
@@ -215,30 +302,67 @@ test("mutations require both a valid session and the same origin", async () => {
   assert.equal(crossOrigin.status, 403);
 });
 
+test("product stock quantity rejects invalid values before writing", async () => {
+  const env = environment();
+  const loginResponse = await login(env);
+  const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
+  for (const stockQuantity of ["-1", "1001"]) {
+    const response = await call(env, "/api/admin/products", {
+      method: "POST",
+      headers: { Origin: "https://studio.test", Cookie: cookie },
+      body: productForm({ stockQuantity })
+    });
+    assert.equal(response.status, 400);
+  }
+  assert.equal(env.DB.products.length, 0);
+});
+
 test("authenticated product create, update, image read and delete work end to end", async () => {
   const env = environment();
   const loginResponse = await login(env);
   const cookie = loginResponse.headers.get("Set-Cookie").split(";")[0];
   const headers = { Origin: "https://studio.test", Cookie: cookie };
 
-  const createdResponse = await call(env, "/api/admin/products", { method: "POST", headers, body: productForm() });
+  const createForm = productForm();
+  createForm.delete("stockQuantity");
+  const createdResponse = await call(env, "/api/admin/products", { method: "POST", headers, body: createForm });
   assert.equal(createdResponse.status, 201);
   const created = (await createdResponse.json()).product;
   assert.equal(created.name, "ফাস্ট চার্জার");
+  assert.equal(created.stockQuantity, 10);
+  assert.equal(env.DB.products[0].stock_quantity, 10);
   const imageResponse = await call(env, created.imageUrl);
   assert.equal(imageResponse.status, 200);
   assert.equal(imageResponse.headers.get("Content-Type"), "image/webp");
   assert.deepEqual(Array.from(new Uint8Array(await imageResponse.arrayBuffer())), [1, 2, 3, 4]);
 
-  const update = productForm({ name: "টাইপ-সি চার্জার", price: "650", inStock: "false", withoutImages: true });
+  const update = productForm({ name: "টাইপ-সি চার্জার", price: "650", stockQuantity: "0", withoutImages: true });
   const updatedResponse = await call(env, `/api/admin/products/${created.id}`, { method: "PUT", headers, body: update });
   assert.equal(updatedResponse.status, 200);
   const updated = (await updatedResponse.json()).product;
   assert.equal(updated.name, "টাইপ-সি চার্জার");
   assert.equal(updated.price, 650);
   assert.equal(updated.inStock, false);
+  assert.equal(updated.stockQuantity, 0);
 
-  const deletedResponse = await call(env, `/api/admin/products/${created.id}`, { method: "DELETE", headers });
+  const deleteHeaders = { ...headers, "Content-Type": "application/json" };
+  const missingPasswordResponse = await call(env, `/api/admin/products/${created.id}`, {
+    method: "DELETE", headers: deleteHeaders, body: JSON.stringify({})
+  });
+  assert.equal(missingPasswordResponse.status, 400);
+  assert.equal(env.DB.products.length, 1);
+
+  const wrongPasswordResponse = await call(env, `/api/admin/products/${created.id}`, {
+    method: "DELETE", headers: deleteHeaders, body: JSON.stringify({ password: "wrong" })
+  });
+  assert.equal(wrongPasswordResponse.status, 403);
+  assert.equal(env.DB.products.length, 1);
+  const retainedImageResponse = await call(env, created.imageUrl);
+  assert.equal(retainedImageResponse.status, 200);
+
+  const deletedResponse = await call(env, `/api/admin/products/${created.id}`, {
+    method: "DELETE", headers: deleteHeaders, body: JSON.stringify({ password: env.ADMIN_PASSWORD })
+  });
   assert.equal(deletedResponse.status, 200);
   assert.equal(env.DB.products.length, 0);
   const deletedImageResponse = await call(env, created.imageUrl);

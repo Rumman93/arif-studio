@@ -81,6 +81,44 @@ test("profile images have mobile admin upload controls and repeat-safe additive 
   assert.doesNotMatch(migration, /\b(?:ALTER|INSERT|UPDATE|DELETE|DROP)\b/i);
 });
 
+test("catalog inventory, filters and WhatsApp ordering are additive and mobile-ready", () => {
+  const migration = readFileSync("migrations/0005_product_stock_quantity.sql", "utf8");
+  const catalog = readFileSync("public/accessories.html", "utf8");
+  const catalogScript = readFileSync("public/js/accessories.js", "utf8");
+  const catalogStyles = readFileSync("public/css/accessories.css", "utf8");
+  const admin = readFileSync("public/admin/index.html", "utf8");
+  const adminScript = readFileSync("public/js/admin.js", "utf8");
+
+  assert.match(migration, /ALTER TABLE products/);
+  assert.match(migration, /ADD COLUMN stock_quantity INTEGER DEFAULT 10/);
+  assert.match(migration, /CHECK \(stock_quantity BETWEEN 0 AND 1000\)/);
+  assert.doesNotMatch(migration, /product_inventory/i);
+  for (const id of ["filter-in-stock", "filter-min-price", "filter-max-price", "clear-filters", "initial-products"]) {
+    assert.match(catalog, new RegExp(`id="${id}"`));
+  }
+  assert.match(catalog, /<!-- SERVER_PRODUCT_CARDS -->/);
+  assert.match(catalogScript, /https:\/\/wa\.me\//);
+  assert.match(catalogScript, /encodeURIComponent\(message\)/);
+  assert.match(catalogStyles, /grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(admin, /id="product-stock-quantity"[^>]*max="1000"[^>]*value="10"/);
+  assert.match(adminScript, /form\.append\("stockQuantity"/);
+  assert.doesNotMatch(catalog + catalogScript, /\breviews?\b|\bratings?\b/i);
+});
+
+test("product deletion shows a permanent warning and requires password confirmation", () => {
+  const admin = readFileSync("public/admin/index.html", "utf8");
+  const adminScript = readFileSync("public/js/admin.js", "utf8");
+  const worker = readFileSync("worker.js", "utf8");
+
+  assert.match(admin, /id="delete-dialog"/);
+  assert.match(admin, /id="delete-password"[^>]*type="password"[^>]*required/);
+  assert.match(admin, /স্থায়ীভাবে মুছে যাবে। এটি ফিরিয়ে আনা যাবে না।/);
+  assert.match(adminScript, /JSON\.stringify\(\{ password:/);
+  assert.doesNotMatch(adminScript, /window\.confirm/);
+  assert.match(worker, /constantTimeEqual\(password, env\.ADMIN_PASSWORD\)/);
+  assert.match(worker, /Incorrect password\. The product was not deleted\./);
+});
+
 test("security policies allow Cloudflare Web Analytics automatic injection", () => {
   for (const file of ["worker.js", "public/_headers"]) {
     const source = readFileSync(file, "utf8");

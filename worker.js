@@ -1,9 +1,10 @@
 const SESSION_COOKIE = "arif_admin";
-const SESSION_SECONDS = 12 * 60 * 60;
+const SESSION_SECONDS = 60 * 60;
 const MAX_IMAGE_BYTES = 500 * 1024;
 const MAX_PROFILE_IMAGE_BYTES = 500 * 1024;
 const LOGIN_WINDOW_SECONDS = 15 * 60;
 const LOGIN_MAX_FAILURES = 5;
+const PRODUCT_CACHE_SECONDS = 5 * 60;
 const ANALYTICS_CACHE_SECONDS = 5 * 60;
 const CLOUDFLARE_ACCOUNT_TAG = "e2b1b46e43b33d3704fbbcea77ab9aba";
 const ANALYTICS_HOST = "arifstudio.pages.dev";
@@ -23,8 +24,11 @@ async function route(request, env, ctx) {
   const url = new URL(request.url);
   const path = url.pathname;
 
+  if ((path === "/accessories" || path === "/accessories.html") && request.method === "GET") {
+    return getAccessoriesPage(request, env, ctx);
+  }
   if (path === "/api/products" && request.method === "GET") {
-    return listProducts(env);
+    return listProducts(request, env, ctx);
   }
   if (path === "/api/site-settings" && request.method === "GET") {
     return getPublicSiteSettings(request, env, ctx);
@@ -63,7 +67,7 @@ async function route(request, env, ctx) {
     return adminMutation(request, env, ctx, (req, bindings, execution) => updateProduct(req, bindings, execution, productMatch[1]));
   }
   if (productMatch && request.method === "DELETE") {
-    return adminMutation(request, env, ctx, (req, bindings, execution) => deleteProduct(bindings, execution, productMatch[1]));
+    return adminMutation(request, env, ctx, (req, bindings, execution) => deleteProduct(req, bindings, execution, productMatch[1]));
   }
 
   if (path.startsWith("/product-images/") && request.method === "GET") {
@@ -279,14 +283,90 @@ function putAnalyticsCache(cache, key, payload, ctx) {
   if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(operation);
 }
 
-async function listProducts(env) {
-  requireBindings(env, ["DB"]);
-  const result = await env.DB.prepare(
-    "SELECT id, name, name_en, price, in_stock, image_ratio, image_etag, updated_at FROM products WHERE image_data IS NOT NULL ORDER BY created_at DESC"
-  ).all();
-  return json({ products: (result.results || []).map(publicProduct) }, 200, {
-    "Cache-Control": "public, max-age=15, stale-while-revalidate=60"
+const PRODUCT_SELECT = `SELECT
+  id, name, name_en, price, in_stock, stock_quantity, image_ratio, image_etag, updated_at
+  FROM products`;
+
+async function listProducts(request, env, ctx) {
+  const payload = await getProductPayload(request, env, ctx);
+  return json(payload, 200, {
+    "Cache-Control": "public, max-age=60, stale-while-revalidate=300"
   });
+}
+
+async function getProductPayload(request, env, ctx) {
+  requireBindings(env, ["DB"]);
+  const cache = defaultCache();
+  const key = productCacheKey(request);
+  if (cache) {
+    try {
+      const cached = await cache.match(key);
+      if (cached) return cached.json();
+    } catch (error) {
+      console.warn("Product cache read failed", error);
+    }
+  }
+  const result = await env.DB.prepare(
+    `${PRODUCT_SELECT} WHERE image_data IS NOT NULL ORDER BY created_at DESC`
+  ).all();
+  const payload = { products: (result.results || []).map(publicProduct) };
+  if (cache) {
+    const response = json(payload, 200, { "Cache-Control": `public, max-age=${PRODUCT_CACHE_SECONDS}` });
+    const operation = cache.put(key, response).catch(error => console.warn("Product cache write failed", error));
+    if (ctx && typeof ctx.waitUntil === "function") ctx.waitUntil(operation);
+  }
+  return payload;
+}
+
+async function getAccessoriesPage(request, env, ctx) {
+  if (!env.ASSETS) return new Response("Static asset binding is not configured.", { status: 503 });
+  const asset = await env.ASSETS.fetch(new Request(new URL("/accessories", request.url), request));
+  if (!asset.ok) return asset;
+
+  const payload = await getProductPayload(request, env, ctx);
+  const html = (await asset.text())
+    .replace("<!-- SERVER_PRODUCT_CARDS -->", serverProductCards(payload.products))
+    .replace("<!-- INITIAL_PRODUCTS -->", safeJson(payload.products));
+  const headers = new Headers(asset.headers);
+  headers.set("Content-Type", "text/html; charset=utf-8");
+  headers.set("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
+  headers.delete("Content-Length");
+  headers.delete("ETag");
+  return new Response(html, { status: asset.status, headers });
+}
+
+function serverProductCards(products) {
+  const number = new Intl.NumberFormat("bn-BD", { maximumFractionDigits: 0 });
+  return products.map(product => {
+    const name = escapeHtml(product.name);
+    const stock = product.stockQuantity > 0 ? `স্টকে ${number.format(product.stockQuantity)}টি আছে` : "স্টক শেষ";
+    const stockClass = product.stockQuantity > 0 ? "stock" : "stock out";
+    return `<article class="product-card"><div class="product-media"><img src="${escapeHtml(product.imageUrl)}" alt="${name}" width="720" height="720" loading="lazy" decoding="async"></div><div class="product-body"><h3 class="product-name">${name}</h3><div class="product-meta"><strong class="product-price">৳${number.format(product.price)}</strong><span class="${stockClass}">${stock}</span></div></div></article>`;
+  }).join("");
+}
+
+function safeJson(value) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, character => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;"
+  })[character]);
+}
+
+function productCacheKey(request) {
+  return new Request(new URL("/api/products?cache=v2", request.url).toString(), { method: "GET" });
+}
+
+async function invalidateProductCache(request) {
+  const cache = defaultCache();
+  if (!cache) return;
+  try {
+    await cache.delete(productCacheKey(request));
+  } catch (error) {
+    console.warn("Product cache invalidation failed", error);
+  }
 }
 
 const SITE_SETTINGS_SELECT = `SELECT
@@ -568,7 +648,7 @@ function logout() {
   });
 }
 
-async function createProduct(request, env) {
+async function createProduct(request, env, _ctx) {
   requireBindings(env, ["DB"]);
   const form = await readProductForm(request, true);
   if (form.error) return json({ error: form.error }, 400);
@@ -577,11 +657,12 @@ async function createProduct(request, env) {
   const imageBytes = await form.image.arrayBuffer();
   const imageEtag = await sha256Hex(imageBytes);
   await env.DB.prepare(
-    "INSERT INTO products (id, name, name_en, price, in_stock, image_small_key, image_large_key, image_ratio, image_data, image_etag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-  ).bind(id, form.name, form.nameEn, form.price, form.inStock, `d1/${id}-image.webp`, `d1/${id}-image-large.webp`, form.imageRatio, imageBytes, imageEtag).run();
+    "INSERT INTO products (id, name, name_en, price, in_stock, stock_quantity, image_small_key, image_large_key, image_ratio, image_data, image_etag) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  ).bind(id, form.name, form.nameEn, form.price, form.inStock, form.stockQuantity, `d1/${id}-image.webp`, `d1/${id}-image-large.webp`, form.imageRatio, imageBytes, imageEtag).run();
+  await invalidateProductCache(request);
 
   const row = await env.DB.prepare(
-    "SELECT id, name, name_en, price, in_stock, image_ratio, image_etag, updated_at FROM products WHERE id = ? LIMIT 1"
+    `${PRODUCT_SELECT} WHERE id = ? LIMIT 1`
   ).bind(id).first();
   return json({ product: publicProduct(row) }, 201, { "Cache-Control": "no-store" });
 }
@@ -599,28 +680,46 @@ async function updateProduct(request, env, _ctx, id) {
     const imageBytes = await form.image.arrayBuffer();
     const imageEtag = await sha256Hex(imageBytes);
     await env.DB.prepare(
-      "UPDATE products SET name = ?, name_en = ?, price = ?, in_stock = ?, image_ratio = ?, image_data = ?, image_etag = ?, updated_at = unixepoch() WHERE id = ?"
-    ).bind(form.name, form.nameEn, form.price, form.inStock, form.imageRatio, imageBytes, imageEtag, id).run();
+      "UPDATE products SET name = ?, name_en = ?, price = ?, in_stock = ?, stock_quantity = ?, image_ratio = ?, image_data = ?, image_etag = ?, updated_at = unixepoch() WHERE id = ?"
+    ).bind(form.name, form.nameEn, form.price, form.inStock, form.stockQuantity, form.imageRatio, imageBytes, imageEtag, id).run();
   } else {
     await env.DB.prepare(
-      "UPDATE products SET name = ?, name_en = ?, price = ?, in_stock = ?, updated_at = unixepoch() WHERE id = ?"
-    ).bind(form.name, form.nameEn, form.price, form.inStock, id).run();
+      "UPDATE products SET name = ?, name_en = ?, price = ?, in_stock = ?, stock_quantity = ?, updated_at = unixepoch() WHERE id = ?"
+    ).bind(form.name, form.nameEn, form.price, form.inStock, form.stockQuantity, id).run();
   }
+  await invalidateProductCache(request);
 
   const row = await env.DB.prepare(
-    "SELECT id, name, name_en, price, in_stock, image_ratio, image_etag, updated_at FROM products WHERE id = ? LIMIT 1"
+    `${PRODUCT_SELECT} WHERE id = ? LIMIT 1`
   ).bind(id).first();
   return json({ product: publicProduct(row) }, 200, { "Cache-Control": "no-store" });
 }
 
-async function deleteProduct(env, _ctx, id) {
-  requireBindings(env, ["DB"]);
+async function deleteProduct(request, env, _ctx, id) {
+  requireBindings(env, ["DB", "ADMIN_PASSWORD"]);
+  if (!isJson(request)) return json({ error: "Expected a JSON request." }, 415);
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return json({ error: "Invalid request." }, 400);
+  }
+  const password = typeof body.password === "string" ? body.password : "";
+  if (!password || password.length > 256) {
+    return json({ error: "Enter the admin password to delete this product." }, 400, { "Cache-Control": "no-store" });
+  }
+  if (!await constantTimeEqual(password, env.ADMIN_PASSWORD)) {
+    return json({ error: "Incorrect password. The product was not deleted." }, 403, { "Cache-Control": "no-store" });
+  }
+
   const current = await env.DB.prepare(
     "SELECT id FROM products WHERE id = ? LIMIT 1"
   ).bind(id).first();
   if (!current) return json({ error: "Product not found." }, 404);
 
   await env.DB.prepare("DELETE FROM products WHERE id = ?").bind(id).run();
+  await invalidateProductCache(request);
   return json({ deleted: true }, 200, { "Cache-Control": "no-store" });
 }
 
@@ -638,7 +737,8 @@ async function readProductForm(request, requireImages) {
   const nameEn = cleanText(data.get("nameEn"), 120);
   const priceText = String(data.get("price") || "");
   const price = Number(priceText);
-  const inStockText = String(data.get("inStock") || "");
+  const stockQuantityText = String(data.get("stockQuantity") ?? "10");
+  const stockQuantity = Number(stockQuantityText);
   const imageRatio = Number(data.get("imageRatio"));
   const image = fileValue(data.get("image"));
 
@@ -646,7 +746,9 @@ async function readProductForm(request, requireImages) {
   if (!/^\d{1,9}$/.test(priceText) || !Number.isSafeInteger(price) || price < 0) {
     return { error: "Price must be a whole number from 0 to 999,999,999." };
   }
-  if (inStockText !== "true" && inStockText !== "false") return { error: "Choose a valid stock status." };
+  if (!/^\d{1,4}$/.test(stockQuantityText) || !Number.isSafeInteger(stockQuantity) || stockQuantity < 0 || stockQuantity > 1000) {
+    return { error: "Stock quantity must be a whole number from 0 to 1,000." };
+  }
   if (requireImages && !image) return { error: "A product image is required." };
   if (image && !validImage(image)) return { error: "The image must be a WebP file under 500 KB." };
   if ((image || requireImages) && (!Number.isFinite(imageRatio) || imageRatio < 0.2 || imageRatio > 5)) {
@@ -657,7 +759,8 @@ async function readProductForm(request, requireImages) {
     name,
     nameEn,
     price,
-    inStock: inStockText === "true" ? 1 : 0,
+    inStock: stockQuantity > 0 ? 1 : 0,
+    stockQuantity,
     imageRatio: Number.isFinite(imageRatio) ? imageRatio : null,
     image
   };
@@ -741,12 +844,17 @@ function blobBytes(value) {
 }
 
 function publicProduct(row) {
+  const storedStockQuantity = row.stock_quantity == null ? 10 : Number(row.stock_quantity);
+  const stockQuantity = Number.isSafeInteger(storedStockQuantity) && storedStockQuantity >= 0
+    ? storedStockQuantity
+    : 10;
   return {
     id: row.id,
     name: row.name,
     nameEn: row.name_en || "",
     price: row.price,
-    inStock: Boolean(row.in_stock),
+    inStock: stockQuantity > 0,
+    stockQuantity,
     imageUrl: `/product-images/${row.id}.webp?v=d1-${row.image_etag || row.updated_at}`,
     imageRatio: row.image_ratio,
     updatedAt: row.updated_at

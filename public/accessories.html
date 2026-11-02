@@ -49,15 +49,29 @@
             <h2 id="products-title" data-copy="products">পণ্যসমূহ</h2>
             <p id="product-count" aria-live="polite"></p>
           </div>
-          <button class="refresh-button" id="refresh-products" type="button" data-copy="refresh">আবার লোড করুন</button>
+        </div>
+
+        <div class="catalog-controls">
+          <details class="catalog-filters" id="catalog-filters">
+            <summary><span data-copy="filter">ফিল্টার</span><span class="filter-count" id="active-filter-count">০</span></summary>
+            <div class="filter-panel">
+              <label class="stock-filter" for="filter-in-stock">
+                <input id="filter-in-stock" type="checkbox">
+                <span data-copy="onlyInStock">শুধু স্টকে আছে</span>
+              </label>
+              <div class="price-filters">
+                <label for="filter-min-price"><span data-copy="minPrice">সর্বনিম্ন দাম</span><input id="filter-min-price" type="number" min="0" max="999999999" step="1" inputmode="numeric" placeholder="৳ ০"></label>
+                <label for="filter-max-price"><span data-copy="maxPrice">সর্বোচ্চ দাম</span><input id="filter-max-price" type="number" min="0" max="999999999" step="1" inputmode="numeric" placeholder="৳ ২০০০"></label>
+              </div>
+              <button class="clear-filters" id="clear-filters" type="button" data-copy="clearFilters">ফিল্টার মুছুন</button>
+            </div>
+          </details>
         </div>
 
         <div class="product-grid" id="product-grid" aria-live="polite" aria-busy="true">
-          <div class="product-skeleton" aria-hidden="true"></div>
-          <div class="product-skeleton" aria-hidden="true"></div>
-          <div class="product-skeleton" aria-hidden="true"></div>
-          <div class="product-skeleton" aria-hidden="true"></div>
+          <!-- SERVER_PRODUCT_CARDS -->
         </div>
+        <script id="initial-products" type="application/json"><!-- INITIAL_PRODUCTS --></script>
 
         <div class="catalog-state" id="catalog-state" hidden>
           <div class="state-icon" aria-hidden="true">◎</div>

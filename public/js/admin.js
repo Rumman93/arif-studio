@@ -8,6 +8,9 @@
   var productDialog = document.getElementById("product-dialog");
   var productForm = document.getElementById("product-form");
   var productError = document.getElementById("product-error");
+  var deleteDialog = document.getElementById("delete-dialog");
+  var deleteForm = document.getElementById("delete-form");
+  var deleteError = document.getElementById("delete-error");
   var productList = document.getElementById("admin-products");
   var adminState = document.getElementById("admin-state");
   var settingsForm = document.getElementById("settings-form");
@@ -22,6 +25,7 @@
   var settingsDirty = false;
   var settingsSnapshot = "";
   var previewUrl = "";
+  var pendingDeleteProduct = null;
   var toastTimer;
 
   function showToast(message) {
@@ -45,6 +49,7 @@
   }
 
   function showLogin() {
+    if (deleteDialog.open) deleteDialog.close();
     dashboardView.hidden = true;
     loginView.hidden = false;
     settingsLoaded = false;
@@ -413,7 +418,9 @@
       price.textContent = "৳" + new Intl.NumberFormat("bn-BD").format(product.price);
       var stock = document.createElement("span");
       stock.className = product.inStock ? "available" : "unavailable";
-      stock.textContent = product.inStock ? "স্টকে আছে" : "স্টক শেষ";
+      stock.textContent = product.inStock
+        ? "স্টকে " + new Intl.NumberFormat("bn-BD").format(product.stockQuantity || 0) + "টি"
+        : "স্টক শেষ";
       meta.append(price, stock);
       body.append(name, meta);
 
@@ -428,7 +435,7 @@
       remove.type = "button";
       remove.className = "delete-product";
       remove.textContent = "ডিলিট";
-      remove.addEventListener("click", function () { deleteProduct(product); });
+      remove.addEventListener("click", function () { openDeleteDialog(product); });
       actions.append(edit, remove);
       card.append(image, body, actions);
       productList.appendChild(card);
@@ -445,7 +452,7 @@
     document.getElementById("product-name").value = editing ? product.name : "";
     document.getElementById("product-name-en").value = editing ? product.nameEn : "";
     document.getElementById("product-price").value = editing ? product.price : "";
-    document.getElementById("product-stock").checked = editing ? product.inStock : true;
+    document.getElementById("product-stock-quantity").value = editing ? product.stockQuantity : 10;
     document.getElementById("product-image").required = !editing;
     document.getElementById("image-required").hidden = editing;
     if (editing) setPreview(product.imageUrl, false);
@@ -506,7 +513,7 @@
       form.append("name", document.getElementById("product-name").value);
       form.append("nameEn", document.getElementById("product-name-en").value);
       form.append("price", document.getElementById("product-price").value);
-      form.append("inStock", String(document.getElementById("product-stock").checked));
+      form.append("stockQuantity", document.getElementById("product-stock-quantity").value || "10");
       if (file) {
         var optimized = await optimizeImage(file);
         form.append("image", optimized.image, "product.webp");
@@ -569,17 +576,55 @@
     });
   }
 
-  async function deleteProduct(product) {
-    if (!window.confirm("‘" + product.name + "’ পণ্যটি স্থায়ীভাবে ডিলিট করবেন?")) return;
+  function openDeleteDialog(product) {
+    pendingDeleteProduct = product;
+    deleteForm.reset();
+    deleteError.textContent = "";
+    document.getElementById("delete-product-name").textContent = "‘" + product.name + "’";
+    deleteDialog.showModal();
+    document.getElementById("delete-password").focus();
+  }
+
+  function closeDeleteDialog() {
+    if (deleteDialog.open) deleteDialog.close();
+  }
+
+  document.getElementById("close-delete-dialog").addEventListener("click", closeDeleteDialog);
+  document.getElementById("cancel-delete").addEventListener("click", closeDeleteDialog);
+  deleteDialog.addEventListener("click", function (event) {
+    if (event.target === deleteDialog) closeDeleteDialog();
+  });
+  deleteDialog.addEventListener("close", function () {
+    pendingDeleteProduct = null;
+    deleteForm.reset();
+    deleteError.textContent = "";
+  });
+
+  deleteForm.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    if (!pendingDeleteProduct) return;
+    var product = pendingDeleteProduct;
+    var button = document.getElementById("confirm-delete");
+    deleteError.textContent = "";
+    button.disabled = true;
+    button.textContent = "ডিলিট হচ্ছে…";
     try {
-      await api("/api/admin/products/" + product.id, { method: "DELETE" });
+      await api("/api/admin/products/" + product.id, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({ password: document.getElementById("delete-password").value })
+      });
       products = products.filter(function (item) { return item.id !== product.id; });
       renderProducts();
+      closeDeleteDialog();
       showToast("পণ্য ডিলিট হয়েছে");
     } catch (error) {
-      showToast(error.message);
+      deleteError.textContent = error.message;
+    } finally {
+      button.disabled = false;
+      button.textContent = "স্থায়ীভাবে ডিলিট করুন";
     }
-  }
+  });
 
   function profileUploader(role) {
     return document.querySelector('[data-profile-uploader="' + role + '"]');
